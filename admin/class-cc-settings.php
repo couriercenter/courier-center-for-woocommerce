@@ -438,6 +438,8 @@ class CC_Settings {
                 'ZipCode'               => '10431',
                 'City'                  => 'ΑΘΗΝΑ',
                 'Phones'                => '2101234567',
+                'Country'               => 'GREECE',
+                'CountryCode'           => 'GR',
             ),
             'Consignee'    => array(
                 'CompanyName' => 'TEST',
