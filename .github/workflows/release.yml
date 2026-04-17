@@ -4,20 +4,24 @@ on:
   release:
     types: [created]
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Create Plugin ZIP
         run: |
           zip -r courier-center-for-woocommerce.zip . \
             --exclude "*.git*" \
             --exclude ".github/*" \
-            --exclude "*.gitignore"
+            --exclude "*.gitignore" \
+            --exclude "tk*"
 
       - name: Upload ZIP to Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: courier-center-for-woocommerce.zip
