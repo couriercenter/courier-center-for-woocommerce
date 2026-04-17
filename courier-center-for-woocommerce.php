@@ -71,6 +71,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-bulk-actions.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-manifest-page.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-bug-report.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-updater.php';
     }
 
     private function init_hooks() {
@@ -83,6 +84,7 @@ class Courier_Center_WooCommerce {
         $this->manifest_page = new CC_Manifest_Page();
         $this->email_integration = new CC_Email_Integration();
         $this->bug_report = new CC_Bug_Report();
+        new CC_Updater();
     }
 
     public function admin_scripts( $hook ) {
