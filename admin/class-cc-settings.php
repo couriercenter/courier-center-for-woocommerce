@@ -409,6 +409,7 @@ class CC_Settings {
      * AJAX: Δημιούργησε test αποστολή → GetShipmentDetails → Void → επέστρεψε στοιχεία αποστολέα
      */
     public function ajax_test_and_autofill() {
+        error_log( 'CC AUTOFILL - Handler called!' );
         check_ajax_referer( 'cc_autofill_nonce', 'nonce' );
 
         if ( ! current_user_can( 'manage_woocommerce' ) ) {
