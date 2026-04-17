@@ -15,11 +15,14 @@ jobs:
 
       - name: Create Plugin ZIP
         run: |
-          zip -r courier-center-for-woocommerce.zip . \
-            --exclude "*.git*" \
-            --exclude ".github/*" \
-            --exclude "*.gitignore" \
-            --exclude "tk*"
+          mkdir -p courier-center-for-woocommerce
+          rsync -av --exclude='.git' \
+                    --exclude='.github' \
+                    --exclude='.gitignore' \
+                    --exclude='tk*' \
+                    --exclude='courier-center-for-woocommerce' \
+                    . courier-center-for-woocommerce/
+          zip -r courier-center-for-woocommerce.zip courier-center-for-woocommerce/
 
       - name: Upload ZIP to Release
         uses: softprops/action-gh-release@v2
