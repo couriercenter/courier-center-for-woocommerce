@@ -402,7 +402,6 @@ class CC_Settings {
                 <?php
                 settings_fields( 'cc_wc_settings' );
                 do_settings_sections( 'courier-center' );
-                submit_button( 'Αποθήκευση Ρυθμίσεων' );
                 ?>
             </form>
         </div>
@@ -527,12 +526,17 @@ class CC_Settings {
             error_log( 'CC Autofill: Void επιτυχής για AWB ' . $awb );
         }
 
-        // ── Βήμα 4: Αποθήκευση και επιστροφή στοιχείων ─────────────────────
-        if ( ! empty( $name ) )    update_option( 'cc_wc_shipper_name', sanitize_text_field( $name ) );
-        if ( ! empty( $address ) ) update_option( 'cc_wc_shipper_address', sanitize_text_field( $address ) );
-        if ( ! empty( $postal ) )  update_option( 'cc_wc_shipper_postal_code', sanitize_text_field( $postal ) );
-        if ( ! empty( $city ) )    update_option( 'cc_wc_shipper_city', sanitize_text_field( $city ) );
-        if ( ! empty( $phone ) )   update_option( 'cc_wc_shipper_phone', sanitize_text_field( $phone ) );
+        // ── Βήμα 4: Αποθήκευση όλων των options ────────────────────────────
+        update_option( 'cc_wc_user_alias',          $user_alias );
+        update_option( 'cc_wc_credential_value',    $credential_value );
+        update_option( 'cc_wc_api_key',             $api_key );
+        update_option( 'cc_wc_billing_account',     $billing_account );
+        update_option( 'cc_wc_shipper_name',        $name );
+        update_option( 'cc_wc_shipper_address',     $address );
+        update_option( 'cc_wc_shipper_postal_code', $postal );
+        update_option( 'cc_wc_shipper_city',        $city );
+        update_option( 'cc_wc_shipper_phone',       $phone );
+        update_option( 'cc_wc_shipper_station',     $shipper_station );
 
         error_log( 'CC Autofill: Αποθήκευση ολοκληρώθηκε. Αποστολή response.' );
 
@@ -542,6 +546,7 @@ class CC_Settings {
             'shipper_postal_code'  => $postal,
             'shipper_city'         => $city,
             'shipper_phone'        => $phone,
+            'shipper_station'      => $shipper_station,
         ) );
     }
 
