@@ -431,7 +431,14 @@ class CC_Settings {
             'shipmentDate' => date( 'Y-m-d' ),
             'comments'     => 'TEST AUTOFILL - DELETE',
             'Requestor'    => array( 'CarrierBillingAccount' => $billing_account ),
-            'Shipper'      => array( 'CarrierBillingAccount' => $billing_account ),
+            'Shipper'      => array(
+                'CarrierBillingAccount' => $billing_account,
+                'CompanyName'           => 'TEST',
+                'Address'               => 'TEST',
+                'ZipCode'               => '10431',
+                'City'                  => 'ΑΘΗΝΑ',
+                'Phones'                => '2101234567',
+            ),
             'Consignee'    => array(
                 'CompanyName' => 'TEST',
                 'ContactName' => 'TEST',
