@@ -503,34 +503,21 @@ class CC_Settings {
             wp_send_json_error( array( 'message' => 'Βήμα 2 — Αποτυχία GetShipmentDetails: ' . $details->get_error_message() ) );
         }
 
-        // Ανακτούμε το Shipper block
-        // Πραγματική δομή: ShipmentDetails[0]['ShipmentInfo']['Shipper']
-        $shipper = array();
-        if ( ! empty( $details['ShipmentDetails'][0]['ShipmentInfo']['Shipper'] ) ) {
-            $shipper = $details['ShipmentDetails'][0]['ShipmentInfo']['Shipper'];
-        } elseif ( ! empty( $details['ShipmentDetails'][0]['Shipper'] ) ) {
-            $shipper = $details['ShipmentDetails'][0]['Shipper'];
-        } elseif ( ! empty( $details['Shipper'] ) ) {
-            $shipper = $details['Shipper'];
-        }
+        // Ανακτούμε στοιχεία από ShipmentDetails[0]['ShipmentInfo']
+        $info    = $details['ShipmentDetails'][0]['ShipmentInfo'] ?? array();
+        $shipper = $info['Shipper'] ?? array();
 
+        error_log( 'CC Autofill: ShipmentInfo=' . wp_json_encode( $info ) );
         error_log( 'CC Autofill: shipper block=' . wp_json_encode( $shipper ) );
 
-        // Εξαγωγή πεδίων
-        $name    = $shipper['CompanyName'] ?? '';
-        $address = $shipper['Address'] ?? '';
-        $postal  = $shipper['ZipCode'] ?? '';
-        $city    = $shipper['City'] ?? '';
-        $phone   = '';
-        if ( ! empty( $shipper['Phones'] ) ) {
-            $phone = is_array( $shipper['Phones'] ) ? ( $shipper['Phones'][0] ?? '' ) : $shipper['Phones'];
-        } elseif ( ! empty( $shipper['Mobile1'] ) ) {
-            $phone = $shipper['Mobile1'];
-        } elseif ( ! empty( $shipper['Phone'] ) ) {
-            $phone = $shipper['Phone'];
-        }
+        $name            = $shipper['CompanyName'] ?? '';
+        $address         = $shipper['Address'] ?? '';
+        $postal          = $shipper['ZipCode'] ?? '';
+        $city            = $shipper['City'] ?? '';
+        $phone           = $shipper['Phones'] ?? '';
+        $shipper_station = $info['PickupStation']['Prefix'] ?? '';
 
-        error_log( sprintf( 'CC Autofill: Εξήχθησαν → name=%s address=%s postal=%s city=%s phone=%s', $name, $address, $postal, $city, $phone ) );
+        error_log( sprintf( 'CC Autofill: Εξήχθησαν → name=%s address=%s postal=%s city=%s phone=%s station=%s', $name, $address, $postal, $city, $phone, $shipper_station ) );
 
         // ── Βήμα 3: Void αποστολής ──────────────────────────────────────────
         $void_result = $api->void_shipment( $awb );
