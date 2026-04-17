@@ -292,8 +292,12 @@ class CC_Settings {
                     url: ajaxurl,
                     type: 'POST',
                     data: {
-                        action: 'cc_test_and_autofill',
-                        nonce:  '<?php echo esc_js( $nonce ); ?>'
+                        action:           'cc_test_and_autofill',
+                        nonce:            '<?php echo esc_js( $nonce ); ?>',
+                        user_alias:       $('#cc_wc_user_alias').val(),
+                        credential_value: $('#cc_wc_credential_value').val(),
+                        api_key:          $('#cc_wc_api_key').val(),
+                        billing_account:  $('#cc_wc_billing_account').val(),
                     },
                     success: function(response) {
                         $btn.prop('disabled', false).text('🔍 Test & Auto-fill στοιχεία');
@@ -416,10 +420,10 @@ class CC_Settings {
             wp_send_json_error( array( 'message' => 'Unauthorized' ) );
         }
 
-        $user_alias       = get_option( 'cc_wc_user_alias', '' );
-        $credential_value = get_option( 'cc_wc_credential_value', '' );
-        $api_key          = get_option( 'cc_wc_api_key', '' );
-        $billing_account  = get_option( 'cc_wc_billing_account', '' );
+        $user_alias       = sanitize_text_field( $_POST['user_alias']       ?? get_option( 'cc_wc_user_alias', '' ) );
+        $credential_value = sanitize_text_field( $_POST['credential_value'] ?? get_option( 'cc_wc_credential_value', '' ) );
+        $api_key          = sanitize_text_field( $_POST['api_key']          ?? get_option( 'cc_wc_api_key', '' ) );
+        $billing_account  = sanitize_text_field( $_POST['billing_account']  ?? get_option( 'cc_wc_billing_account', '' ) );
 
         error_log( 'CC AUTOFILL credentials - alias: ' . $user_alias . ' | billing: ' . $billing_account . ' | api_key empty: ' . ( empty( $api_key ) ? 'YES' : 'NO' ) . ' | credential empty: ' . ( empty( $credential_value ) ? 'YES' : 'NO' ) );
 
