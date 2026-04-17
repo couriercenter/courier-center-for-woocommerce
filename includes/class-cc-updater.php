@@ -51,15 +51,25 @@ class CC_Updater {
             return $transient;
         }
 
-        $latest_version = ltrim( $release->tag_name, 'v' );
+        $latest_version  = ltrim( $release->tag_name, 'v' );
+        $current_version = $transient->checked[ $this->plugin_slug ] ?? CC_WC_VERSION;
 
-        if ( version_compare( CC_WC_VERSION, $latest_version, '<' ) ) {
+        error_log( 'CC Updater - plugin_slug: ' . $this->plugin_slug );
+        error_log( 'CC Updater - latest: ' . $latest_version . ' current: ' . $current_version );
+
+        if ( version_compare( $current_version, $latest_version, '<' ) ) {
             $transient->response[ $this->plugin_slug ] = (object) array(
-                'slug'        => dirname( $this->plugin_slug ),
-                'plugin'      => $this->plugin_slug,
-                'new_version' => $latest_version,
-                'url'         => "https://github.com/{$this->github_user}/{$this->github_repo}",
-                'package'     => $release->zipball_url,
+                'id'           => $this->plugin_slug,
+                'slug'         => dirname( $this->plugin_slug ),
+                'plugin'       => $this->plugin_slug,
+                'new_version'  => $latest_version,
+                'url'          => "https://github.com/{$this->github_user}/{$this->github_repo}",
+                'package'      => $release->zipball_url,
+                'icons'        => array(),
+                'banners'      => array(),
+                'requires'     => '6.0',
+                'tested'       => '6.9',
+                'requires_php' => '7.4',
             );
         }
 
