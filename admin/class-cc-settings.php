@@ -423,6 +423,7 @@ class CC_Settings {
             'ApiKey'          => get_option( 'cc_wc_api_key', '' ),
         );
 
+        error_log( 'CC AUTOFILL Context: ' . wp_json_encode( $context ) );
         error_log( 'CC Autofill: Βήμα 1 — δημιουργία test αποστολής για billing_account=' . $billing_account );
 
         // ── Βήμα 1: Δημιουργία test αποστολής ──────────────────────────────
