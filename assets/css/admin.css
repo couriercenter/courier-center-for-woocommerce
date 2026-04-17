@@ -1,0 +1,59 @@
+/**
+ * Courier Center Admin Styles
+ */
+
+/* Settings page */
+.cc-settings-page {
+    max-width: 800px;
+}
+
+.cc-settings-page .form-table th {
+    width: 200px;
+}
+
+.cc-settings-page input[type="text"],
+.cc-settings-page input[type="password"] {
+    width: 100%;
+    max-width: 400px;
+}
+
+/* Test connection section */
+.cc-test-connection {
+    background: #f0f0f1;
+    border: 1px solid #c3c4c7;
+    border-radius: 4px;
+    padding: 20px;
+    margin-top: 20px;
+}
+
+.cc-test-connection h2 {
+    margin-top: 0;
+}
+
+/* Success/Error messages */
+.notice.cc-notice {
+    margin: 20px 0;
+}
+
+/* Info boxes */
+.cc-info-box {
+    background: #fff;
+    border: 1px solid #c3c4c7;
+    border-left: 4px solid #2271b1;
+    padding: 12px;
+    margin: 20px 0;
+}
+
+.cc-info-box h3 {
+    margin-top: 0;
+}
+
+.cc-info-box ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+/* Password field indicator */
+input[type="password"][value]:not([value=""]) {
+    background-color: #f0f6fc;
+}
