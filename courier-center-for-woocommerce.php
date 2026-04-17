@@ -125,3 +125,9 @@ class Courier_Center_WooCommerce {
 
 // Initialize plugin
 Courier_Center_WooCommerce::get_instance();
+
+// ΠΡΟΣΩΡΙΝΟ — διαγραφή cache για force-check update (αφαίρεσε μετά το test)
+add_action('init', function() {
+    delete_transient('update_plugins');
+    delete_transient('cc_wc_github_release');
+});
