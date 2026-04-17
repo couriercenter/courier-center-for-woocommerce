@@ -416,12 +416,18 @@ class CC_Settings {
             wp_send_json_error( array( 'message' => 'Unauthorized' ) );
         }
 
-        $api             = new CC_API();
-        $billing_account = get_option( 'cc_wc_billing_account', '' );
-        $context         = array(
-            'UserAlias'       => get_option( 'cc_wc_user_alias', '' ),
-            'CredentialValue' => get_option( 'cc_wc_credential_value', '' ),
-            'ApiKey'          => get_option( 'cc_wc_api_key', '' ),
+        $user_alias       = get_option( 'cc_wc_user_alias', '' );
+        $credential_value = get_option( 'cc_wc_credential_value', '' );
+        $api_key          = get_option( 'cc_wc_api_key', '' );
+        $billing_account  = get_option( 'cc_wc_billing_account', '' );
+
+        error_log( 'CC AUTOFILL credentials - alias: ' . $user_alias . ' | billing: ' . $billing_account . ' | api_key empty: ' . ( empty( $api_key ) ? 'YES' : 'NO' ) . ' | credential empty: ' . ( empty( $credential_value ) ? 'YES' : 'NO' ) );
+
+        $api     = new CC_API();
+        $context = array(
+            'UserAlias'       => $user_alias,
+            'CredentialValue' => $credential_value,
+            'ApiKey'          => $api_key,
         );
 
         error_log( 'CC AUTOFILL Context: ' . wp_json_encode( $context ) );
