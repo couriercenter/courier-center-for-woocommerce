@@ -64,7 +64,7 @@ class CC_Updater {
                 'plugin'       => $this->plugin_slug,
                 'new_version'  => $latest_version,
                 'url'          => "https://github.com/{$this->github_user}/{$this->github_repo}",
-                'package'      => $release->zipball_url,
+                'package'      => "https://github.com/{$this->github_user}/{$this->github_repo}/releases/download/{$release->tag_name}/courier-center-for-woocommerce.zip",
                 'icons'        => array(),
                 'banners'      => array(),
                 'requires'     => '6.0',
