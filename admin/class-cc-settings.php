@@ -282,7 +282,14 @@ class CC_Settings {
         </div>
 
         <script>
+        console.log('CC Settings JS loaded');
+        console.log('ajaxurl:', typeof ajaxurl !== 'undefined' ? ajaxurl : 'NOT DEFINED');
+
         jQuery(document).ready(function($) {
+            console.log('jQuery ready');
+            console.log('Test button exists:', $('#cc-autofill-btn').length);
+            console.log('Clear button exists:', $('#cc-clear-btn').length);
+
             $('#cc-autofill-btn').on('click', function() {
                 var $btn    = $(this);
                 var $status = $('#cc-autofill-status');
@@ -292,17 +299,25 @@ class CC_Settings {
                 $status.css('color', '#666').text('Βήμα 1/3: Δημιουργία test αποστολής...');
                 $notice.hide();
 
+                var postData = {
+                    action:           'cc_test_and_autofill',
+                    nonce:            '<?php echo esc_js( $nonce ); ?>',
+                    user_alias:       $('#cc_wc_user_alias').val(),
+                    credential_value: $('#cc_wc_credential_value').val(),
+                    api_key:          $('#cc_wc_api_key').val(),
+                    billing_account:  $('#cc_wc_billing_account').val(),
+                };
+                console.log('CC Autofill POST data:', {
+                    user_alias:       postData.user_alias      || '(empty)',
+                    credential_value: postData.credential_value ? '(set, length=' + postData.credential_value.length + ')' : '(empty)',
+                    api_key:          postData.api_key          ? '(set, length=' + postData.api_key.length + ')' : '(empty)',
+                    billing_account:  postData.billing_account  || '(empty)',
+                });
+
                 $.ajax({
                     url: ajaxurl,
                     type: 'POST',
-                    data: {
-                        action:           'cc_test_and_autofill',
-                        nonce:            '<?php echo esc_js( $nonce ); ?>',
-                        user_alias:       $('#cc_wc_user_alias').val(),
-                        credential_value: $('#cc_wc_credential_value').val(),
-                        api_key:          $('#cc_wc_api_key').val(),
-                        billing_account:  $('#cc_wc_billing_account').val(),
-                    },
+                    data: postData,
                     success: function(response) {
                         $btn.prop('disabled', false).text('🔍 Test & Auto-fill στοιχεία');
                         console.log('CC Autofill response:', response);
@@ -338,7 +353,6 @@ class CC_Settings {
                     }
                 });
             });
-        });
 
             $('#cc-clear-btn').on('click', function() {
                 if ( ! confirm('Είστε σίγουροι ότι θέλετε να διαγράψετε όλες τις ρυθμίσεις;') ) {
@@ -444,10 +458,30 @@ class CC_Settings {
             wp_send_json_error( array( 'message' => 'Unauthorized' ) );
         }
 
-        $user_alias       = sanitize_text_field( $_POST['user_alias']       ?? get_option( 'cc_wc_user_alias', '' ) );
-        $credential_value = sanitize_text_field( $_POST['credential_value'] ?? get_option( 'cc_wc_credential_value', '' ) );
-        $api_key          = sanitize_text_field( $_POST['api_key']          ?? get_option( 'cc_wc_api_key', '' ) );
-        $billing_account  = sanitize_text_field( $_POST['billing_account']  ?? get_option( 'cc_wc_billing_account', '' ) );
+        $user_alias       = sanitize_text_field( $_POST['user_alias']       ?? '' );
+        $credential_value = sanitize_text_field( $_POST['credential_value'] ?? '' );
+        $api_key          = sanitize_text_field( $_POST['api_key']          ?? '' );
+        $billing_account  = sanitize_text_field( $_POST['billing_account']  ?? '' );
+
+        // Αν τα password fields ήρθαν κενά (browser δεν στέλνει masked τιμές), fallback στη βάση
+        if ( empty( $credential_value ) ) {
+            $credential_value = get_option( 'cc_wc_credential_value', '' );
+        }
+        if ( empty( $api_key ) ) {
+            $api_key = get_option( 'cc_wc_api_key', '' );
+        }
+        if ( empty( $user_alias ) ) {
+            $user_alias = get_option( 'cc_wc_user_alias', '' );
+        }
+        if ( empty( $billing_account ) ) {
+            $billing_account = get_option( 'cc_wc_billing_account', '' );
+        }
+
+        // ── Βήμα 0: Αποθήκευσε credentials πρώτα ───────────────────────────
+        update_option( 'cc_wc_user_alias',       $user_alias );
+        update_option( 'cc_wc_credential_value', $credential_value );
+        update_option( 'cc_wc_api_key',          $api_key );
+        update_option( 'cc_wc_billing_account',  $billing_account );
 
         error_log( 'CC AUTOFILL credentials - alias: ' . $user_alias . ' | billing: ' . $billing_account . ' | api_key empty: ' . ( empty( $api_key ) ? 'YES' : 'NO' ) . ' | credential empty: ' . ( empty( $credential_value ) ? 'YES' : 'NO' ) );
 
@@ -551,11 +585,7 @@ class CC_Settings {
             error_log( 'CC Autofill: Void επιτυχής για AWB ' . $awb );
         }
 
-        // ── Βήμα 4: Αποθήκευση όλων των options ────────────────────────────
-        update_option( 'cc_wc_user_alias',          $user_alias );
-        update_option( 'cc_wc_credential_value',    $credential_value );
-        update_option( 'cc_wc_api_key',             $api_key );
-        update_option( 'cc_wc_billing_account',     $billing_account );
+        // ── Βήμα 4: Αποθήκευση στοιχείων αποστολέα ─────────────────────────
         update_option( 'cc_wc_shipper_name',        $name );
         update_option( 'cc_wc_shipper_address',     $address );
         update_option( 'cc_wc_shipper_postal_code', $postal );
