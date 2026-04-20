@@ -15,6 +15,7 @@ class CC_Settings {
     public function __construct() {
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_action( 'wp_ajax_cc_test_and_autofill', array( $this, 'ajax_test_and_autofill' ) );
+        add_action( 'wp_ajax_cc_clear_settings',    array( $this, 'ajax_clear_settings' ) );
     }
 
     /**
@@ -269,6 +270,9 @@ class CC_Settings {
             <button type="button" id="cc-autofill-btn" class="button button-primary">
                 🔍 Test &amp; Auto-fill στοιχεία
             </button>
+            <button type="button" id="cc-clear-btn" class="button" style="margin-left: 8px; color: #b32d2e; border-color: #b32d2e;">
+                🗑️ Εκκαθάριση
+            </button>
             <span id="cc-autofill-status" style="margin-left: 12px; font-style: italic;"></span>
 
             <div id="cc-autofill-notice" style="display:none; margin-top: 12px; padding: 10px 14px; background: #e7f5e9; border-left: 4px solid #46b450; border-radius: 3px; font-size: 13px;">
@@ -331,6 +335,27 @@ class CC_Settings {
                     error: function(xhr, status, error) {
                         $btn.prop('disabled', false).text('🔍 Test & Auto-fill στοιχεία');
                         $status.css('color', '#b32d2e').text('❌ AJAX error: ' + error);
+                    }
+                });
+            });
+        });
+
+            $('#cc-clear-btn').on('click', function() {
+                if ( ! confirm('Είστε σίγουροι ότι θέλετε να διαγράψετε όλες τις ρυθμίσεις;') ) {
+                    return;
+                }
+                $.ajax({
+                    url: ajaxurl,
+                    type: 'POST',
+                    data: {
+                        action: 'cc_clear_settings',
+                        nonce:  '<?php echo esc_js( wp_create_nonce( 'cc_clear_settings_nonce' ) ); ?>',
+                    },
+                    success: function() {
+                        location.reload();
+                    },
+                    error: function(xhr, status, error) {
+                        alert('❌ AJAX error: ' + error);
                     }
                 });
             });
@@ -644,5 +669,39 @@ class CC_Settings {
             );
         }
         echo '</select>';
+    }
+
+    /**
+     * AJAX: Διαγραφή όλων των plugin options
+     */
+    public function ajax_clear_settings() {
+        check_ajax_referer( 'cc_clear_settings_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        }
+
+        $options = array(
+            'cc_wc_user_alias',
+            'cc_wc_credential_value',
+            'cc_wc_api_key',
+            'cc_wc_billing_account',
+            'cc_wc_shipper_name',
+            'cc_wc_shipper_address',
+            'cc_wc_shipper_postal_code',
+            'cc_wc_shipper_city',
+            'cc_wc_shipper_phone',
+            'cc_wc_shipper_station',
+            'cc_wc_tracking_url',
+            'cc_wc_email_tracking_enabled',
+            'cc_wc_print_template',
+            'cc_wc_print_template_boxnow',
+        );
+
+        foreach ( $options as $option ) {
+            delete_option( $option );
+        }
+
+        wp_send_json_success();
     }
 }
