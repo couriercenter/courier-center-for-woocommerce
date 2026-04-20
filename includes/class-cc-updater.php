@@ -17,6 +17,9 @@ class CC_Updater {
         add_filter( 'plugins_api', array( $this, 'plugin_info' ), 20, 3 );
         add_filter( 'site_transient_update_plugins', array( $this, 'check_update' ) );
         add_action( 'upgrader_process_complete', array( $this, 'after_update' ), 10, 2 );
+        add_action( 'load-update-core.php', function() {
+            delete_transient( 'cc_wc_github_release' );
+        } );
     }
 
     private function get_github_release() {
@@ -35,7 +38,7 @@ class CC_Updater {
             }
 
             $release = json_decode( wp_remote_retrieve_body( $response ) );
-            set_transient( $transient_key, $release, 12 * HOUR_IN_SECONDS );
+            set_transient( $transient_key, $release, 1 * HOUR_IN_SECONDS );
         }
 
         return $release;
