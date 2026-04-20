@@ -3,7 +3,7 @@
  * Plugin Name: Courier Center for WooCommerce
  * Plugin URI: https://courier.gr
  * Description: Ενσωμάτωση Courier Center με WooCommerce - Αυτόματη δημιουργία vouchers, tracking, και διαχείριση αποστολών
- * Version: 1.0.3
+ * Version: 1.0.5
  * Author: Courier Center
  * Author URI: https://courier.gr
  * Text Domain: courier-center-woocommerce
@@ -29,7 +29,7 @@ if ( ! in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins',
 class Courier_Center_WooCommerce {
 
     private static $instance = null;
-    const VERSION = '1.0.3';
+    const VERSION = '1.0.5';
     private $settings;
     private $order_meta_box;
     private $status_tracker;
