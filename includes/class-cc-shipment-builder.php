@@ -240,6 +240,8 @@ class CC_Shipment_Builder {
 
         $city = $this->order->get_billing_city();
 
+        $country_code = $this->order->get_billing_country() ?: 'GR';
+
         return array(
             'CompanyName' => $company,
             'ContactName' => $name,
@@ -247,9 +249,18 @@ class CC_Shipment_Builder {
             'City'        => $city,
             'Area'        => $city, // WooCommerce δεν έχει ξεχωριστό area
             'ZipCode'     => $this->order->get_billing_postcode(),
-            'Country'     => $this->order->get_billing_country() ?: 'GR',
+            'Country'     => $this->get_country_name( $country_code ),
+            'CountryCode' => $country_code,
             'Mobile1'     => $this->order->get_billing_phone(),
         );
+    }
+
+    /**
+     * Returns the full uppercase country name for a given ISO 3166-1 alpha-2 code.
+     */
+    private function get_country_name( $code ) {
+        $countries = WC()->countries->get_countries();
+        return strtoupper( $countries[ $code ] ?? $code );
     }
 
     /**
