@@ -58,13 +58,26 @@ class CC_Updater {
         $current_version = $transient->checked[ $this->plugin_slug ] ?? CC_WC_VERSION;
 
         if ( version_compare( $current_version, $latest_version, '<' ) ) {
+            $package_url = $release->zipball_url;
+            if ( ! empty( $release->assets ) ) {
+                foreach ( $release->assets as $asset ) {
+                    if ( strpos( $asset->name, 'courier-center-for-woocommerce.zip' ) !== false ) {
+                        $package_url = $asset->browser_download_url;
+                        break;
+                    }
+                }
+            }
+
+            error_log( 'CC Updater - package URL: ' . ( $package_url ?? 'no asset' ) );
+            error_log( 'CC Updater - zipball URL: ' . $release->zipball_url );
+
             $transient->response[ $this->plugin_slug ] = (object) array(
                 'id'           => $this->plugin_slug,
                 'slug'         => dirname( $this->plugin_slug ),
                 'plugin'       => $this->plugin_slug,
                 'new_version'  => $latest_version,
                 'url'          => "https://github.com/{$this->github_user}/{$this->github_repo}",
-                'package'      => "https://github.com/{$this->github_user}/{$this->github_repo}/releases/download/{$release->tag_name}/courier-center-for-woocommerce.zip",
+                'package'      => $package_url,
                 'icons'        => array(),
                 'banners'      => array(),
                 'requires'     => '6.0',
