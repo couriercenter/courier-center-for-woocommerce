@@ -23,13 +23,24 @@ if ( ! in_array( 'woocommerce/woocommerce.php', apply_filters( 'active_plugins',
     return;
 }
 
+// Δήλωση συμβατότητας με WooCommerce HPOS
+add_action( 'before_woocommerce_init', function() {
+    if ( class_exists( \Automattic\WooCommerce\Utilities\FeaturesUtil::class ) ) {
+        \Automattic\WooCommerce\Utilities\FeaturesUtil::declare_compatibility(
+            'custom_order_tables',
+            __FILE__,
+            true
+        );
+    }
+} );
+
 /**
  * Κύρια κλάση plugin
  */
 class Courier_Center_WooCommerce {
 
     private static $instance = null;
-    const VERSION = '1.0.7';
+    const VERSION = '1.0.8';
     private $settings;
     private $order_meta_box;
     private $status_tracker;

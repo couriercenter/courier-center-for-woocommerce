@@ -57,9 +57,6 @@ class CC_Updater {
         $latest_version  = ltrim( $release->tag_name, 'v' );
         $current_version = $transient->checked[ $this->plugin_slug ] ?? CC_WC_VERSION;
 
-        error_log( 'CC Updater - plugin_slug: ' . $this->plugin_slug );
-        error_log( 'CC Updater - latest: ' . $latest_version . ' current: ' . $current_version );
-
         if ( version_compare( $current_version, $latest_version, '<' ) ) {
             $transient->response[ $this->plugin_slug ] = (object) array(
                 'id'           => $this->plugin_slug,

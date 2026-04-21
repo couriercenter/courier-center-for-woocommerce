@@ -89,6 +89,16 @@ class CC_Order_Meta_Box {
         $inline_js = "
         jQuery(document).ready(function(\$) {
 
+            // Toggle multi-parcel
+            \$('#cc-multi-parcel').on('change', function() {
+                if (\$(this).is(':checked')) {
+                    \$('#cc-parcel-count-wrap').show();
+                } else {
+                    \$('#cc-parcel-count-wrap').hide();
+                    \$('#cc-parcel-count').val(2);
+                }
+            });
+
             // Create voucher handler
             \$(document).on('click', '#cc-create-voucher-btn', function(e) {
                 e.preventDefault();
@@ -110,7 +120,8 @@ class CC_Order_Meta_Box {
                         order_id: \$form.find('[name=order_id]').val(),
                         service_type: \$form.find('[name=service_type]').val(),
                         boxnow: \$form.find('[name=boxnow]').is(':checked') ? '1' : '0',
-                        return_option: \$form.find('[name=return_option]:checked').val() || 'none'
+                        return_option: \$form.find('[name=return_option]:checked').val() || 'none',
+                        parcel_count: \$('#cc-multi-parcel').is(':checked') ? parseInt(\$('#cc-parcel-count').val()) : 1
                     },
                     success: function(response) {
                         if (response.success) {
@@ -421,6 +432,23 @@ class CC_Order_Meta_Box {
                         <option value="same_day_5h">Αυθημερόν 5 ώρες</option>
                     </select>
 
+                    <div class="cc-field-group" style="border:1px solid #ddd; border-radius:4px; padding:10px; margin:8px 0; background:#f9f9f9;">
+                        <label style="font-weight:600; display:block; margin-bottom:6px;">
+                            📦 Πολλαπλή Αποστολή:
+                        </label>
+                        <label style="display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="cc-multi-parcel" value="1" />
+                            <span style="font-size:12px;">Ενεργοποίηση πολλαπλών τεμαχίων</span>
+                        </label>
+                        <div id="cc-parcel-count-wrap" style="display:none; margin-top:8px;">
+                            <label style="font-size:12px; display:flex; align-items:center; gap:6px;">
+                                Αριθμός Τεμαχίων:
+                                <input type="number" id="cc-parcel-count" value="2" min="2" max="99"
+                                       style="width:60px;" />
+                            </label>
+                        </div>
+                    </div>
+
                     <div class="cc-return-options">
                         <label style="display: block; margin-bottom: 5px; font-weight: 600;">
                             ↩️ Επιστροφικό:
@@ -494,6 +522,8 @@ class CC_Order_Meta_Box {
 
         $service_type = isset( $_POST['service_type'] ) ? sanitize_text_field( $_POST['service_type'] ) : 'next_day';
         $boxnow       = isset( $_POST['boxnow'] ) && $_POST['boxnow'] === '1';
+        $parcel_count = isset( $_POST['parcel_count'] ) ? intval( $_POST['parcel_count'] ) : 1;
+        $parcel_count = max( 1, min( 99, $parcel_count ) );
 
         // Validate return option
         $return_option = isset( $_POST['return_option'] ) ? sanitize_text_field( $_POST['return_option'] ) : 'none';
@@ -501,7 +531,7 @@ class CC_Order_Meta_Box {
             $return_option = 'none';
         }
 
-        $builder = new CC_Shipment_Builder( $order );
+        $builder = new CC_Shipment_Builder( $order, array(), $parcel_count );
 
         $settings_check = $builder->validate_settings();
         if ( is_wp_error( $settings_check ) ) {
