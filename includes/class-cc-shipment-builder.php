@@ -38,11 +38,19 @@ class CC_Shipment_Builder {
     private $settings;
 
     /**
+     * Number of parcels
+     *
+     * @var int
+     */
+    private $parcel_count = 1;
+
+    /**
      * Constructor
      */
-    public function __construct( WC_Order $order ) {
-        $this->order    = $order;
-        $this->settings = $this->load_settings();
+    public function __construct( WC_Order $order, array $settings = array(), int $parcel_count = 1 ) {
+        $this->order        = $order;
+        $this->settings     = empty( $settings ) ? $this->load_settings() : $settings;
+        $this->parcel_count = max( 1, $parcel_count );
     }
 
     /**
@@ -157,6 +165,8 @@ class CC_Shipment_Builder {
             $basic_service = self::SERVICE_CODES[ $service_type ] ?? '211';
         }
 
+        $items_array  = $this->build_items();
+
         $payload = array(
             'Context'      => array(
                 'UserAlias'       => $this->settings['user_alias'],
@@ -183,7 +193,8 @@ class CC_Shipment_Builder {
             'BillTo'       => 'Requestor',
             'BasicService' => $basic_service,
             'Reference1'   => 'WC-' . $this->order->get_id(),
-            'Items'        => $this->build_items(),
+            'NoOfItems'    => $this->parcel_count,
+            'Items'        => $items_array,
         );
 
         // Add COD if applicable
@@ -249,7 +260,7 @@ class CC_Shipment_Builder {
             'City'        => $city,
             'Area'        => $city, // WooCommerce δεν έχει ξεχωριστό area
             'ZipCode'     => $this->order->get_billing_postcode(),
-            'Country'     => $this->get_country_name( $country_code ),
+            'Country'     => $country_code,
             'CountryCode' => $country_code,
             'Mobile1'     => $this->order->get_billing_phone(),
         );
@@ -272,38 +283,31 @@ class CC_Shipment_Builder {
      * - Αν δεν υπάρχει βάρος (test orders, dummy items), χρησιμοποιούμε default 1 kg.
      */
     private function build_items() {
-        $items = array();
+        $dimensions = $this->get_order_dimensions();
+        $weight     = $this->get_order_weight();
 
-        foreach ( $this->order->get_items() as $line_item ) {
-            $product = $line_item->get_product();
-            $qty     = (int) $line_item->get_quantity();
+        $item = array(
+            'GoodsType'        => 'NoDocs',
+            'Content'          => 'ΔΕΜΑΤΑ',
+            'IsDangerousGoods' => false,
+            'IsDryIce'         => false,
+            'IsFragile'        => false,
+            'Weight'           => array( 'Unit' => 'kg', 'Value' => $weight ),
+        );
 
-            // Πάρε το βάρος ανά τεμάχιο
-            $weight_per_unit = self::DEFAULT_WEIGHT_KG;
-            if ( $product && $product->has_weight() ) {
-                $weight_per_unit = (float) $product->get_weight();
-                if ( $weight_per_unit <= 0 ) {
-                    $weight_per_unit = self::DEFAULT_WEIGHT_KG;
-                }
-            }
-
-            for ( $i = 0; $i < $qty; $i++ ) {
-                $items[] = $this->build_single_item( $weight_per_unit );
-            }
+        if ( ! empty( $dimensions ) ) {
+            $item['Length'] = array( 'Unit' => 'cm', 'Value' => (float) $dimensions['length'] );
+            $item['Width']  = array( 'Unit' => 'cm', 'Value' => (float) $dimensions['width'] );
+            $item['Height'] = array( 'Unit' => 'cm', 'Value' => (float) $dimensions['height'] );
         }
 
-        // Αν η παραγγελία είναι κενή (test), βάλε ένα default item
-        if ( empty( $items ) ) {
-            $items[] = $this->build_single_item( self::DEFAULT_WEIGHT_KG );
-        }
-
-        return $items;
+        return array_fill( 0, $this->parcel_count, $item );
     }
 
     /**
      * Build a single Item block
      */
-    private function build_single_item( $weight_kg ) {
+    private function build_single_item( $weight_kg, $volumetric_kg ) {
         return array(
             'GoodsType'        => 'NoDocs',
             'Content'          => 'ΔΕΜΑΤΑ',
@@ -314,7 +318,59 @@ class CC_Shipment_Builder {
                 'Unit'  => 'kg',
                 'Value' => $weight_kg,
             ),
+            'VolumetricWeight' => array(
+                'Unit'  => 'kg',
+                'Value' => $volumetric_kg,
+            ),
         );
+    }
+
+    private function get_order_weight() {
+        $weight = 0;
+        foreach ( $this->order->get_items() as $item ) {
+            $product = $item->get_product();
+            if ( $product && $product->get_weight() ) {
+                $weight += (float) $product->get_weight() * $item->get_quantity();
+            }
+        }
+        return $weight > 0 ? $weight : 1.0;
+    }
+
+    private function get_volumetric_weight() {
+        $volume = 0;
+        foreach ( $this->order->get_items() as $item ) {
+            $product = $item->get_product();
+            if ( $product ) {
+                $l = (float) $product->get_length();
+                $w = (float) $product->get_width();
+                $h = (float) $product->get_height();
+                if ( $l && $w && $h ) {
+                    // Volumetric weight = (L x W x H) / 5000
+                    $volume += ( $l * $w * $h / 5000 ) * $item->get_quantity();
+                }
+            }
+        }
+        return $volume > 0 ? $volume : $this->get_order_weight();
+    }
+
+    private function get_order_dimensions() {
+        foreach ( $this->order->get_items() as $item ) {
+            $product = $item->get_product();
+            if ( $product ) {
+                $l = (float) $product->get_length();
+                $w = (float) $product->get_width();
+                $h = (float) $product->get_height();
+                if ( $l > 0 && $w > 0 && $h > 0 ) {
+                    // Μετατροπή από cm σε cm (WooCommerce αποθηκεύει σε cm)
+                    return array(
+                        'length' => $l,
+                        'width'  => $w,
+                        'height' => $h,
+                    );
+                }
+            }
+        }
+        return array();
     }
 
     /**

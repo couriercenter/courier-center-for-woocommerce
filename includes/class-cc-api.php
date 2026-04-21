@@ -87,6 +87,7 @@ class CC_API {
      * @return array|WP_Error
      */
     public function create_shipment( $payload ) {
+        error_log( 'CC PAYLOAD: ' . wp_json_encode( $payload, JSON_UNESCAPED_UNICODE ) );
         try {
             $response = $this->request( 'POST', '/Shipment', $payload );
 
