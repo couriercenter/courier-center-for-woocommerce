@@ -40,7 +40,7 @@ add_action( 'before_woocommerce_init', function() {
 class Courier_Center_WooCommerce {
 
     private static $instance = null;
-    const VERSION = '1.0.9';
+    const VERSION = '1.1.0';
     private $settings;
     private $order_meta_box;
     private $status_tracker;
