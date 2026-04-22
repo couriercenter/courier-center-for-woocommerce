@@ -119,6 +119,8 @@ class CC_Status_Tracker {
      * Run status update for all active shipments
      */
     public function run_status_update() {
+        update_option( 'cc_wc_cron_last_run', current_time( 'Y-m-d H:i:s' ) );
+
         $orders = $this->get_active_shipment_orders();
 
         if ( empty( $orders ) ) {

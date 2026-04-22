@@ -443,6 +443,18 @@ class CC_Settings {
                 do_settings_sections( 'courier-center' );
                 ?>
             </form>
+
+            <?php
+            $next_cron = wp_next_scheduled( 'cc_status_tracking_cron' );
+            $last_run  = get_option( 'cc_wc_cron_last_run', '' );
+            ?>
+            <div style="background:#f0f6fc; border-left:4px solid #2271b1; padding:12px 16px; margin-top:20px; max-width:700px; border-radius:3px;">
+                <strong>⏰ Αυτόματη Ενημέρωση Status</strong><br>
+                <small>
+                    Επόμενη εκτέλεση: <strong><?php echo $next_cron ? human_time_diff( $next_cron ) . ' από τώρα (' . date( 'H:i', $next_cron ) . ')' : '❌ Δεν είναι προγραμματισμένο!'; ?></strong><br>
+                    Τελευταία εκτέλεση: <strong><?php echo $last_run ? $last_run : 'Δεν έχει τρέξει ακόμα'; ?></strong>
+                </small>
+            </div>
         </div>
         <?php
     }
