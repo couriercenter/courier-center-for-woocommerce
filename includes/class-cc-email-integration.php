@@ -70,30 +70,28 @@ class CC_Email_Integration {
      */
     private function render_html( $awb, $tracking_url ) {
         ?>
-        <div style="margin: 0 0 30px; padding: 20px; background: #f6f9fc; border-left: 4px solid #2271b1; border-radius: 4px;">
-            <h3 style="margin: 0 0 10px; color: #1d2327; font-size: 16px;">
-                🚚 Στοιχεία Αποστολής
-            </h3>
-            <p style="margin: 0 0 10px; color: #2c3338; font-size: 14px; line-height: 1.5;">
+        <div style="margin: 0 0 30px; padding: 20px; background: #f6f9fc; border-left: 4px solid #2271b1; border-radius: 4px; font-family: Arial, sans-serif;">
+            <p style="margin: 0 0 12px; font-size: 16px; font-weight: bold; color: #1d2327; border-bottom: 1px solid #dce3e8; padding-bottom: 10px;">
+                Στοιχεία Αποστολής Courier Center
+            </p>
+            <p style="margin: 0 0 10px; color: #2c3338; font-size: 14px;">
                 Η παραγγελία σας έχει δρομολογηθεί μέσω <strong>Courier Center</strong>.
             </p>
             <table cellpadding="0" cellspacing="0" border="0" style="width: 100%; margin: 10px 0;">
                 <tr>
                     <td style="padding: 6px 0; color: #50575e; font-size: 14px; width: 180px;">Αριθμός Αποστολής:</td>
-                    <td style="padding: 6px 0; color: #1d2327; font-size: 14px; font-weight: 600;">
-                        <?php echo esc_html( $awb ); ?>
-                    </td>
+                    <td style="padding: 6px 0; color: #1d2327; font-size: 14px; font-weight: bold;"><?php echo esc_html( $awb ); ?></td>
                 </tr>
             </table>
             <p style="margin: 15px 0 0;">
                 <a href="<?php echo esc_url( $tracking_url ); ?>"
-                   style="display: inline-block; padding: 10px 20px; background: #2271b1; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500;">
-                    📍 Παρακολούθηση Αποστολής
+                   style="display: inline-block; padding: 10px 20px; background: #2271b1; color: #ffffff; text-decoration: none; border-radius: 4px; font-weight: 500; font-size: 14px;">
+                    Παρακολούθηση Αποστολής &rarr;
                 </a>
             </p>
-            <p style="margin: 15px 0 0; color: #787c82; font-size: 12px; line-height: 1.4;">
+            <p style="margin: 15px 0 0; color: #787c82; font-size: 12px;">
                 Μπορείτε να παρακολουθείτε την αποστολή σας πατώντας το παραπάνω κουμπί ή χρησιμοποιώντας τον αριθμό αποστολής στο
-                <a href="<?php echo esc_url( $tracking_url ); ?>" style="color: #2271b1;">courier.gr</a>.
+                <a href="https://www.courier.gr" style="color: #2271b1;">courier.gr</a>.
             </p>
         </div>
         <?php
