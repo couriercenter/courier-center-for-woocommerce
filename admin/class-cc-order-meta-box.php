@@ -696,33 +696,43 @@ class CC_Order_Meta_Box {
         }
 
         $is_boxnow = $order->get_meta( '_cc_boxnow' ) === '1';
-        $template  = $is_boxnow
-            ? get_option( 'cc_wc_print_template_boxnow', 'singlepdf_100x150_4up' )
-            : get_option( 'cc_wc_print_template', 'pdf' );
 
-        // singlepdf_100x150_4up is a local-only pseudo-template: fetch as singlepdf_100x150 then arrange 4-up
-        $api_template = ( $template === 'singlepdf_100x150_4up' ) ? 'singlepdf_100x150' : $template;
+        // Διαβάζουμε από τις ρυθμίσεις
+        if ( $is_boxnow ) {
+            $raw_template = get_option( 'cc_wc_print_template_boxnow', 'singlepdf_100x150_4up' );
+        } else {
+            $raw_template = get_option( 'cc_wc_print_template', 'pdf' );
+        }
+
+        // singlepdf_100x150_4up είναι custom — στέλνουμε singlepdf_100x150 στο API
+        // αλλά μετά κάνουμε arrange_4up() με FPDI
+        $use_4up  = ( $raw_template === 'singlepdf_100x150_4up' );
+        $template = $use_4up ? 'singlepdf_100x150' : $raw_template;
 
         $api = new CC_API();
-        $pdf = $api->get_voucher_pdf( $awb, $api_template );
+        $pdf = $api->get_voucher_pdf( $awb, $template );
 
         if ( is_wp_error( $pdf ) ) {
             wp_die( 'Σφάλμα λήψης voucher: ' . esc_html( $pdf->get_error_message() ) );
         }
 
-        if ( $template === 'singlepdf_100x150_4up' ) {
-            $scaled_pdf = CC_PDF_Scaler::arrange_4up( $pdf );
-            if ( is_wp_error( $scaled_pdf ) ) {
-                error_log( 'CC PDF arrange_4up failed: ' . $scaled_pdf->get_error_message() );
-                $scaled_pdf = $pdf;
-            }
-        } else {
-            $scaled_pdf = CC_PDF_Scaler::scale_pdf( $pdf, 0.95 );
-            if ( is_wp_error( $scaled_pdf ) ) {
-                error_log( 'CC PDF Scaler failed: ' . $scaled_pdf->get_error_message() );
-                $scaled_pdf = $pdf;
+        // Αν είναι 4up layout, κάνε arrange με FPDI
+        if ( $use_4up ) {
+            $arranged = CC_PDF_Scaler::arrange_4up( $pdf );
+            if ( ! is_wp_error( $arranged ) ) {
+                $pdf = $arranged;
             }
         }
+
+        // Scale για κανονικά (pdf / clean)
+        if ( in_array( $template, array( 'pdf', 'clean' ), true ) ) {
+            $scaled = CC_PDF_Scaler::scale_pdf( $pdf, 0.95 );
+            if ( ! is_wp_error( $scaled ) ) {
+                $pdf = $scaled;
+            }
+        }
+
+        $scaled_pdf = $pdf;
 
         // Stream PDF to browser - inline display in new tab
         nocache_headers();

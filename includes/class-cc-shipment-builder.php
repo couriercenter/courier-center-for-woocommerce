@@ -135,6 +135,17 @@ class CC_Shipment_Builder {
             return new WP_Error( 'missing_consignee_phone', 'Λείπει το τηλέφωνο παραλήπτη.' );
         }
 
+        // Έλεγχος ΤΚ — πρέπει να είναι 5 ψηφία
+        if ( ! preg_match( '/^\d{5}$/', $postcode ) ) {
+            return new WP_Error( 'invalid_postcode', 'Μη έγκυρος ΤΚ παραλήπτη. Πρέπει να είναι 5 ψηφία (π.χ. 12241).' );
+        }
+
+        // Έλεγχος βάρους — max 30kg ανά τεμάχιο
+        $weight_per_unit = $this->get_order_weight();
+        if ( $weight_per_unit > 30 ) {
+            return new WP_Error( 'weight_exceeded', sprintf( 'Το βάρος (%.1f kg) υπερβαίνει το μέγιστο των 30 kg ανά τεμάχιο.', $weight_per_unit ) );
+        }
+
         // COD international check
         $country = $this->order->get_billing_country();
         if ( $country !== 'GR' && $this->is_cod() ) {
