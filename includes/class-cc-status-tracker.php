@@ -99,9 +99,11 @@ class CC_Status_Tracker {
         add_action( 'cc_status_tracking_cron', array( $this, 'run_status_update' ) );
 
         // Schedule on plugin activation / ensure it's scheduled
-        if ( ! wp_next_scheduled( 'cc_status_tracking_cron' ) ) {
-            wp_schedule_event( time(), 'cc_every_two_hours', 'cc_status_tracking_cron' );
-        }
+        add_action( 'wp_loaded', function() {
+            if ( ! wp_next_scheduled( 'cc_status_tracking_cron' ) ) {
+                wp_schedule_event( time(), 'cc_every_two_hours', 'cc_status_tracking_cron' );
+            }
+        } );
     }
 
     /**

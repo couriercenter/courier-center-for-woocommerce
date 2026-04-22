@@ -441,6 +441,7 @@ class CC_Settings {
                 <?php
                 settings_fields( 'cc_wc_settings' );
                 do_settings_sections( 'courier-center' );
+                submit_button( 'Αποθήκευση Ρυθμίσεων' );
                 ?>
             </form>
 
