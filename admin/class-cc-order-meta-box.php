@@ -366,17 +366,6 @@ class CC_Order_Meta_Box {
                     <?php endif; ?>
                 </div>
 
-                <?php if ( ! empty( $return_awb ) ) :
-                    $return_print_url = wp_nonce_url(
-                        admin_url( 'admin-post.php?action=cc_download_voucher&order_id=' . $order->get_id() . '&type=return' ),
-                        'cc_download_voucher_' . $order->get_id()
-                    );
-                    ?>
-                    <a href="<?php echo esc_url( $return_print_url ); ?>" target="_blank" class="button button-secondary" style="width: 100%; text-align: center; margin-bottom: 8px;">
-                        📄 Εκτύπωση Επιστροφικού
-                    </a>
-                <?php endif; ?>
-
                 <?php if ( $cc_status_desc ) :
                     // Determine status color class
                     $status_class = '';
@@ -538,16 +527,9 @@ class CC_Order_Meta_Box {
             wp_send_json_error( array( 'message' => $settings_check->get_error_message() ) );
         }
 
-        $order_check = $builder->validate_order();
+        $order_check = $builder->validate_order( $boxnow );
         if ( is_wp_error( $order_check ) ) {
             wp_send_json_error( array( 'message' => $order_check->get_error_message() ) );
-        }
-
-        // BOX NOW δεν δέχεται αντικαταβολή
-        if ( $boxnow && $order->get_payment_method() === 'cod' ) {
-            wp_send_json_error( array(
-                'message' => '❌ Το BOX NOW δεν υποστηρίζει αντικαταβολή. Αλλάξτε τον τρόπο πληρωμής ή απενεργοποιήστε το BOX NOW Locker.',
-            ) );
         }
 
         // Build the payload
@@ -689,10 +671,12 @@ class CC_Order_Meta_Box {
                 wp_die( 'Δεν υπάρχει επιστροφικό voucher για αυτή την παραγγελία' );
             }
         } else {
-            $awb = $order->get_meta( '_cc_voucher_number' );
-            if ( empty( $awb ) ) {
+            $main_awb = $order->get_meta( '_cc_voucher_number' );
+            if ( empty( $main_awb ) ) {
                 wp_die( 'Δεν υπάρχει voucher για αυτή την παραγγελία' );
             }
+            $return_awb = $order->get_meta( '_cc_return_awb' );
+            $awb = ! empty( $return_awb ) ? array( $main_awb, $return_awb ) : $main_awb;
         }
 
         $is_boxnow = $order->get_meta( '_cc_boxnow' ) === '1';
@@ -737,7 +721,8 @@ class CC_Order_Meta_Box {
         // Stream PDF to browser - inline display in new tab
         nocache_headers();
         header( 'Content-Type: application/pdf' );
-        header( 'Content-Disposition: inline; filename="voucher-' . sanitize_file_name( $awb ) . '.pdf"' );
+        $filename_awb = is_array( $awb ) ? implode( '-', $awb ) : $awb;
+        header( 'Content-Disposition: inline; filename="voucher-' . sanitize_file_name( $filename_awb ) . '.pdf"' );
         header( 'Content-Length: ' . strlen( $scaled_pdf ) );
 
         echo $scaled_pdf;
