@@ -3,7 +3,7 @@
  * Plugin Name: Courier Center for WooCommerce
  * Plugin URI: https://courier.gr
  * Description: Ενσωμάτωση Courier Center με WooCommerce - Αυτόματη δημιουργία vouchers, tracking, και διαχείριση αποστολών
- * Version: 1.1.4
+ * Version: 1.1.5
  * Author: Courier Center
  * Author URI: https://courier.gr
  * Text Domain: courier-center-woocommerce
@@ -40,7 +40,7 @@ add_action( 'before_woocommerce_init', function() {
 class Courier_Center_WooCommerce {
 
     private static $instance = null;
-    const VERSION = '1.1.4';
+    const VERSION = '1.1.5';
     private $settings;
     private $order_meta_box;
     private $status_tracker;
@@ -89,16 +89,18 @@ class Courier_Center_WooCommerce {
         add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
 
+        // Εξασφάλισε ότι το schedule υπάρχει πριν γίνει instantiation
         add_filter( 'cron_schedules', function( $schedules ) {
             if ( ! isset( $schedules['cc_every_two_hours'] ) ) {
                 $schedules['cc_every_two_hours'] = array(
                     'interval' => 7200,
-                    'display'  => 'Κάθε 2 ώρες (Courier Center)',
+                    'display'  => 'Every 2 hours (Courier Center)',
                 );
             }
             return $schedules;
-        } );
+        }, 5 );
 
+        $this->status_tracker = new CC_Status_Tracker();
         $this->settings       = new CC_Settings();
         $this->order_meta_box = new CC_Order_Meta_Box();
         $this->bulk_actions = new CC_Bulk_Actions();

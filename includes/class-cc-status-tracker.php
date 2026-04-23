@@ -92,22 +92,22 @@ class CC_Status_Tracker {
      * Constructor - register hooks
      */
     public function __construct() {
-        error_log('CC CRON DEBUG - Constructor called');
-        error_log('CC CRON DEBUG - Schedule exists: ' . (wp_next_scheduled('cc_status_tracking_cron') ? 'YES' : 'NO'));
-        error_log('CC CRON DEBUG - Available schedules: ' . wp_json_encode(wp_get_schedules()));
-
-        // Register custom cron schedule (every 2 hours)
+        // Register custom cron schedule
         add_filter( 'cron_schedules', array( $this, 'add_cron_schedule' ) );
 
-        // Register the cron event
+        // Register the cron action
         add_action( 'cc_status_tracking_cron', array( $this, 'run_status_update' ) );
 
-        // Schedule on plugin activation / ensure it's scheduled
-        add_action( 'wp_loaded', function() {
-            if ( ! wp_next_scheduled( 'cc_status_tracking_cron' ) ) {
-                wp_schedule_event( time(), 'cc_every_two_hours', 'cc_status_tracking_cron' );
+        // Schedule cron - τρέχει ΑΜΕΣΩΣ στον constructor, χωρίς hook
+        $next = wp_next_scheduled( 'cc_status_tracking_cron' );
+        if ( ! $next ) {
+            $result = wp_schedule_event( time(), 'cc_every_two_hours', 'cc_status_tracking_cron' );
+            if ( is_wp_error( $result ) ) {
+                error_log( 'CC CRON - wp_schedule_event FAILED: ' . $result->get_error_message() );
+            } else {
+                error_log( 'CC CRON - Scheduled successfully. Next: ' . wp_next_scheduled( 'cc_status_tracking_cron' ) );
             }
-        } );
+        }
     }
 
     /**
