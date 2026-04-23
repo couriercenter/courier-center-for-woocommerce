@@ -446,14 +446,31 @@ class CC_Settings {
             </form>
 
             <?php
-            $next_cron = wp_next_scheduled( 'cc_status_tracking_cron' );
-            $last_run  = get_option( 'cc_wc_cron_last_run', '' );
+            $next_cron     = wp_next_scheduled( 'cc_status_tracking_cron' );
+            $last_run      = get_option( 'cc_wc_cron_last_run', '' );
+            $all_schedules = wp_get_schedules();
+            $has_custom    = isset( $all_schedules['cc_every_two_hours'] );
+            $cron_disabled = defined( 'DISABLE_WP_CRON' ) && DISABLE_WP_CRON;
             ?>
             <div style="background:#f0f6fc; border-left:4px solid #2271b1; padding:12px 16px; margin-top:20px; max-width:700px; border-radius:3px;">
-                <strong>⏰ Αυτόματη Ενημέρωση Status</strong><br>
+                <strong>Αυτόματη Ενημέρωση Status</strong><br>
                 <small>
-                    Επόμενη εκτέλεση: <strong><?php echo $next_cron ? human_time_diff( $next_cron ) . ' από τώρα (' . date( 'H:i', $next_cron ) . ')' : '❌ Δεν είναι προγραμματισμένο!'; ?></strong><br>
+                    Επόμενη εκτέλεση: <strong><?php
+                        if ( $next_cron ) {
+                            echo human_time_diff( time(), $next_cron ) . ' από τώρα (' . date( 'H:i', $next_cron + (get_option('gmt_offset', 0) * 3600) ) . ')';
+                        } else {
+                            echo '❌ Δεν είναι προγραμματισμένο!';
+                        }
+                    ?></strong><br>
                     Τελευταία εκτέλεση: <strong><?php echo $last_run ? $last_run : 'Δεν έχει τρέξει ακόμα'; ?></strong>
+                </small>
+                <br><br>
+                <small style="color: #666;">
+                    <strong>Debug Info:</strong><br>
+                    - Schedule 'cc_every_two_hours' registered: <strong><?php echo $has_custom ? 'YES' : 'NO'; ?></strong><br>
+                    - wp_next_scheduled raw value: <strong><?php echo $next_cron ? $next_cron . ' (' . date('Y-m-d H:i:s', $next_cron) . ' UTC)' : 'FALSE'; ?></strong><br>
+                    - WP Cron: <strong><?php echo $cron_disabled ? 'DISABLED (DISABLE_WP_CRON = true)' : 'ENABLED'; ?></strong><br>
+                    - Server time (UTC): <strong><?php echo date('Y-m-d H:i:s'); ?></strong>
                 </small>
             </div>
         </div>
