@@ -224,9 +224,10 @@ class CC_Bulk_Actions {
             $order = wc_get_order( $order_id );
             if ( ! $order ) { continue; }
 
-            $awb       = $order->get_meta( '_cc_voucher_number' );
-            $is_voided = $order->get_meta( '_cc_voided' ) === '1';
-            $is_boxnow = $order->get_meta( '_cc_boxnow' ) === '1';
+            $awb        = $order->get_meta( '_cc_voucher_number' );
+            $return_awb = $order->get_meta( '_cc_return_awb' );
+            $is_voided  = $order->get_meta( '_cc_voided' ) === '1';
+            $is_boxnow  = $order->get_meta( '_cc_boxnow' ) === '1';
 
             if ( empty( $awb ) || $is_voided ) {
                 $skipped++;
@@ -235,8 +236,14 @@ class CC_Bulk_Actions {
 
             if ( $is_boxnow ) {
                 $boxnow_awbs[] = $awb;
+                if ( ! empty( $return_awb ) ) {
+                    $boxnow_awbs[] = $return_awb;
+                }
             } else {
                 $awbs[] = $awb;
+                if ( ! empty( $return_awb ) ) {
+                    $awbs[] = $return_awb;
+                }
             }
         }
 

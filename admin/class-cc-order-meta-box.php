@@ -527,9 +527,16 @@ class CC_Order_Meta_Box {
             wp_send_json_error( array( 'message' => $settings_check->get_error_message() ) );
         }
 
-        $order_check = $builder->validate_order( $boxnow );
+        $order_check = $builder->validate_order();
         if ( is_wp_error( $order_check ) ) {
             wp_send_json_error( array( 'message' => $order_check->get_error_message() ) );
+        }
+
+        // BOX NOW δεν δέχεται αντικαταβολή
+        if ( $boxnow && $order->get_payment_method() === 'cod' ) {
+            wp_send_json_error( array(
+                'message' => '❌ Το BOX NOW δεν υποστηρίζει αντικαταβολή. Αλλάξτε τον τρόπο πληρωμής ή απενεργοποιήστε το BOX NOW Locker.',
+            ) );
         }
 
         // Build the payload
