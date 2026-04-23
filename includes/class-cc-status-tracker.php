@@ -92,6 +92,10 @@ class CC_Status_Tracker {
      * Constructor - register hooks
      */
     public function __construct() {
+        error_log('CC CRON DEBUG - Constructor called');
+        error_log('CC CRON DEBUG - Schedule exists: ' . (wp_next_scheduled('cc_status_tracking_cron') ? 'YES' : 'NO'));
+        error_log('CC CRON DEBUG - Available schedules: ' . wp_json_encode(wp_get_schedules()));
+
         // Register custom cron schedule (every 2 hours)
         add_filter( 'cron_schedules', array( $this, 'add_cron_schedule' ) );
 
