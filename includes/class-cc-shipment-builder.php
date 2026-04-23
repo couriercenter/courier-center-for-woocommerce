@@ -111,7 +111,7 @@ class CC_Shipment_Builder {
      *
      * @return true|WP_Error
      */
-    public function validate_order() {
+    public function validate_order( $boxnow = false ) {
         $billing_first = $this->order->get_billing_first_name();
         $billing_last  = $this->order->get_billing_last_name();
         $address       = $this->order->get_billing_address_1();
@@ -131,8 +131,8 @@ class CC_Shipment_Builder {
         if ( empty( $postcode ) ) {
             return new WP_Error( 'missing_consignee_postcode', 'Λείπει ο ΤΚ παραλήπτη.' );
         }
-        if ( empty( $phone ) ) {
-            return new WP_Error( 'missing_consignee_phone', 'Λείπει το τηλέφωνο παραλήπτη.' );
+        if ( $boxnow && empty( $phone ) ) {
+            return new WP_Error( 'missing_consignee_phone', 'Λείπει το τηλέφωνο παραλήπτη (απαιτείται για BOX NOW).' );
         }
 
         // Έλεγχος ΤΚ — πρέπει να είναι 5 ψηφία
