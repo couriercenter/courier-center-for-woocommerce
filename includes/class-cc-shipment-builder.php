@@ -111,7 +111,7 @@ class CC_Shipment_Builder {
      *
      * @return true|WP_Error
      */
-    public function validate_order( $boxnow = false ) {
+    public function validate_order() {
         $billing_first = $this->order->get_billing_first_name();
         $billing_last  = $this->order->get_billing_last_name();
         $address       = $this->order->get_billing_address_1();
@@ -131,8 +131,8 @@ class CC_Shipment_Builder {
         if ( empty( $postcode ) ) {
             return new WP_Error( 'missing_consignee_postcode', 'Λείπει ο ΤΚ παραλήπτη.' );
         }
-        if ( $boxnow && empty( $phone ) ) {
-            return new WP_Error( 'missing_consignee_phone', 'Λείπει το τηλέφωνο παραλήπτη (απαιτείται για BOX NOW).' );
+        if ( empty( $phone ) ) {
+            return new WP_Error( 'missing_consignee_phone', 'Λείπει το τηλέφωνο παραλήπτη.' );
         }
 
         // Έλεγχος ΤΚ — πρέπει να είναι 5 ψηφία
@@ -144,6 +144,32 @@ class CC_Shipment_Builder {
         $weight_per_unit = $this->get_order_weight();
         if ( $weight_per_unit > 30 ) {
             return new WP_Error( 'weight_exceeded', sprintf( 'Το βάρος (%.1f kg) υπερβαίνει το μέγιστο των 30 kg ανά τεμάχιο.', $weight_per_unit ) );
+        }
+
+        // Έλεγχος διαστάσεων — max 180cm σε κάθε πλευρά
+        // και max περίμετρος: μήκος + 2*(πλάτος+ύψος) ≤ 300cm
+        $dimensions = $this->get_order_dimensions();
+        if ( ! empty( $dimensions ) ) {
+            $l = (float) $dimensions['length'];
+            $w = (float) $dimensions['width'];
+            $h = (float) $dimensions['height'];
+
+            $max_side = max( $l, $w, $h );
+            if ( $max_side > 180 ) {
+                return new WP_Error(
+                    'dimension_exceeded',
+                    sprintf( 'Η μεγαλύτερη πλευρά (%.0f cm) υπερβαίνει το μέγιστο των 180 cm.', $max_side )
+                );
+            }
+
+            // Girth check: μήκος + 2*(πλάτος+ύψος) ≤ 300cm
+            $girth = $l + 2 * ( $w + $h );
+            if ( $girth > 300 ) {
+                return new WP_Error(
+                    'girth_exceeded',
+                    sprintf( 'Ο συνολικός όγκος αποστολής (%.0f cm) υπερβαίνει το μέγιστο. Επικοινωνήστε με την Courier Center.', $girth )
+                );
+            }
         }
 
         // COD international check
@@ -239,6 +265,8 @@ class CC_Shipment_Builder {
             $payload['GenerateReturnAWB']  = true;
         }
         // 'none' = δεν προσθέτουμε τίποτα (default συμπεριφορά)
+
+        error_log( 'CC PAYLOAD DEBUG: ' . wp_json_encode( $payload, JSON_UNESCAPED_UNICODE ) );
 
         return $payload;
     }
