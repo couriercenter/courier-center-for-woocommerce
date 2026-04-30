@@ -249,9 +249,16 @@ class CC_Shipment_Builder {
 
         // Add BOX NOW if requested
         if ( $boxnow ) {
-            $payload['LockerDeliveryInfo'] = array(
-                'Prefix' => 'BOXNOW',
-            );
+            $locker_info = array( 'Prefix' => 'BOXNOW' );
+
+            $delivery_mode = $this->order->get_meta( '_boxnow_delivery_mode' );
+            $locker_code   = $this->order->get_meta( '_boxnow_locker_code' );
+
+            if ( $delivery_mode === 'pick' && ! empty( $locker_code ) ) {
+                $locker_info['Code'] = $locker_code;
+            }
+
+            $payload['LockerDeliveryInfo'] = $locker_info;
         }
 
         // Add return AWB options

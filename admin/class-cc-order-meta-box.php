@@ -602,8 +602,38 @@ class CC_Order_Meta_Box {
             }
         }
 
-        if ( $boxnow && isset( $result['ContractorResultNote'] ) && stripos( $result['ContractorResultNote'], 'No locker found' ) !== false ) {
-            $order->update_meta_data( '_cc_boxnow_fallback', '1' );
+        if ( $boxnow ) {
+            error_log( 'CC BOXNOW RESPONSE: ' . wp_json_encode( $result, JSON_UNESCAPED_UNICODE ) );
+        }
+
+        $boxnow_fallback      = false;
+        $assigned_locker_code = '';
+
+        if ( $boxnow ) {
+            $contractor_note = $result['ContractorResultNote'] ?? '';
+
+            if ( stripos( $contractor_note, 'No locker found' ) !== false ) {
+                $boxnow_fallback = true;
+                $order->update_meta_data( '_cc_boxnow_fallback', '1' );
+            } else {
+                // Πιθανά fields που επιστρέφει το Courier Center API με το τελικό locker
+                $assigned_locker_code = $result['AssignedLockerCode']
+                    ?? $result['LockerCode']
+                    ?? $result['DestinationLockerCode']
+                    ?? $result['LockerDeliveryInfo']['Code']
+                    ?? '';
+
+                // Fallback: προσπαθούμε να εξάγουμε locker code από το ContractorResultNote
+                if ( empty( $assigned_locker_code ) && ! empty( $contractor_note ) ) {
+                    if ( preg_match( '/locker[:\s#]*(\w+)/i', $contractor_note, $m ) ) {
+                        $assigned_locker_code = $m[1];
+                    }
+                }
+
+                if ( ! empty( $assigned_locker_code ) ) {
+                    $order->update_meta_data( '_cc_boxnow_assigned_locker', $assigned_locker_code );
+                }
+            }
         }
 
         $order->save();
@@ -636,8 +666,17 @@ class CC_Order_Meta_Box {
             $note .= ' | Return AWB: ' . $return_awb;
         }
 
-        if ( $boxnow && isset( $result['ContractorResultNote'] ) && stripos( $result['ContractorResultNote'], 'No locker found' ) !== false ) {
-            $note .= ' | ⚠️ Δεν βρέθηκε locker - αποστέλλεται door-to-door';
+        if ( $boxnow ) {
+            if ( $boxnow_fallback ) {
+                $note .= ' | ⚠️ Δεν βρέθηκε locker - αποστέλλεται door-to-door';
+            } elseif ( ! empty( $assigned_locker_code ) ) {
+                $requested_code = $this->get_requested_locker_code( $order );
+                if ( ! empty( $requested_code ) && $requested_code !== $assigned_locker_code ) {
+                    $note .= ' | 📦 Locker: ' . $assigned_locker_code . ' (ζητήθηκε: ' . $requested_code . ')';
+                } else {
+                    $note .= ' | 📦 Locker: ' . $assigned_locker_code;
+                }
+            }
         }
 
         $order->add_order_note( $note );
@@ -647,6 +686,13 @@ class CC_Order_Meta_Box {
             'voucher_number'  => $voucher_number,
             'tracking_number' => $tracking_number,
         ) );
+    }
+
+    private function get_requested_locker_code( $order ) {
+        if ( $order->get_meta( '_boxnow_delivery_mode' ) === 'pick' ) {
+            return $order->get_meta( '_boxnow_locker_code' );
+        }
+        return '';
     }
 
     /**
