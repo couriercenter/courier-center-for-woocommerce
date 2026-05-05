@@ -247,6 +247,28 @@ class CC_Settings {
             'cc_wc_print_section',
             array( 'label_for' => 'cc_wc_print_template_boxnow' )
         );
+
+        // ── BOX NOW Widget section ────────────────────────────────────────────
+        add_settings_section(
+            'cc_wc_boxnow_section',
+            '📦 BOX NOW Widget (Checkout)',
+            array( $this, 'boxnow_section_callback' ),
+            'courier-center'
+        );
+
+        register_setting( 'cc_wc_settings', 'cc_wc_boxnow_enabled', array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '0',
+        ) );
+        add_settings_field(
+            'cc_wc_boxnow_enabled',
+            __( 'Ενεργοποίηση BOX NOW', 'courier-center-woocommerce' ),
+            array( $this, 'boxnow_enabled_field_callback' ),
+            'courier-center',
+            'cc_wc_boxnow_section',
+            array( 'label_for' => 'cc_wc_boxnow_enabled' )
+        );
     }
 
     /**
@@ -481,7 +503,6 @@ class CC_Settings {
      * AJAX: Δημιούργησε test αποστολή → GetShipmentDetails → Void → επέστρεψε στοιχεία αποστολέα
      */
     public function ajax_test_and_autofill() {
-        error_log( 'CC AUTOFILL - Handler called!' );
         check_ajax_referer( 'cc_autofill_nonce', 'nonce' );
 
         if ( ! current_user_can( 'manage_woocommerce' ) ) {
@@ -513,17 +534,12 @@ class CC_Settings {
         update_option( 'cc_wc_api_key',          $api_key );
         update_option( 'cc_wc_billing_account',  $billing_account );
 
-        error_log( 'CC AUTOFILL credentials - alias: ' . $user_alias . ' | billing: ' . $billing_account . ' | api_key empty: ' . ( empty( $api_key ) ? 'YES' : 'NO' ) . ' | credential empty: ' . ( empty( $credential_value ) ? 'YES' : 'NO' ) );
-
         $api     = new CC_API();
         $context = array(
             'UserAlias'       => $user_alias,
             'CredentialValue' => $credential_value,
             'ApiKey'          => $api_key,
         );
-
-        error_log( 'CC AUTOFILL Context: ' . wp_json_encode( $context ) );
-        error_log( 'CC Autofill: Βήμα 1 — δημιουργία test αποστολής για billing_account=' . $billing_account );
 
         // ── Βήμα 1: Δημιουργία test αποστολής ──────────────────────────────
         $payload = array(
@@ -568,14 +584,11 @@ class CC_Settings {
 
         $create_result = $api->create_shipment( $payload );
 
-        error_log( 'CC Autofill: Αποτέλεσμα create_shipment: ' . wp_json_encode( $create_result ) );
-
         if ( is_wp_error( $create_result ) ) {
             wp_send_json_error( array( 'message' => 'Βήμα 1 — Αποτυχία δημιουργίας test αποστολής: ' . $create_result->get_error_message() ) );
         }
 
         $awb = $create_result['ShipmentNumber'] ?? '';
-        error_log( 'CC Autofill: AWB=' . $awb );
 
         if ( empty( $awb ) ) {
             wp_send_json_error( array( 'message' => 'Βήμα 1 — Το API δεν επέστρεψε ShipmentNumber. Response: ' . wp_json_encode( $create_result ) ) );
@@ -583,8 +596,6 @@ class CC_Settings {
 
         // ── Βήμα 2: GetShipmentDetails → εξαγωγή στοιχείων αποστολέα ───────
         $details = $api->get_shipment_details( $awb );
-
-        error_log( 'CC Autofill: get_shipment_details response: ' . wp_json_encode( $details ) );
 
         if ( is_wp_error( $details ) ) {
             $api->void_shipment( $awb );
@@ -595,9 +606,6 @@ class CC_Settings {
         $info    = $details['ShipmentDetails'][0]['ShipmentInfo'] ?? array();
         $shipper = $info['Shipper'] ?? array();
 
-        error_log( 'CC Autofill: ShipmentInfo=' . wp_json_encode( $info ) );
-        error_log( 'CC Autofill: shipper block=' . wp_json_encode( $shipper ) );
-
         $name            = $shipper['CompanyName'] ?? '';
         $address         = $shipper['Address'] ?? '';
         $postal          = $shipper['ZipCode'] ?? '';
@@ -605,15 +613,8 @@ class CC_Settings {
         $phone           = $shipper['Phones'] ?? '';
         $shipper_station = $info['PickupStation']['Prefix'] ?? '';
 
-        error_log( sprintf( 'CC Autofill: Εξήχθησαν → name=%s address=%s postal=%s city=%s phone=%s station=%s', $name, $address, $postal, $city, $phone, $shipper_station ) );
-
         // ── Βήμα 3: Void αποστολής ──────────────────────────────────────────
         $void_result = $api->void_shipment( $awb );
-        if ( is_wp_error( $void_result ) ) {
-            error_log( 'CC Autofill: Αποτυχία void AWB ' . $awb . ': ' . $void_result->get_error_message() );
-        } else {
-            error_log( 'CC Autofill: Void επιτυχής για AWB ' . $awb );
-        }
 
         // ── Βήμα 4: Αποθήκευση στοιχείων αποστολέα ─────────────────────────
         update_option( 'cc_wc_shipper_name',        $name );
@@ -622,8 +623,6 @@ class CC_Settings {
         update_option( 'cc_wc_shipper_city',        $city );
         update_option( 'cc_wc_shipper_phone',       $phone );
         update_option( 'cc_wc_shipper_station',     $shipper_station );
-
-        error_log( 'CC Autofill: Αποθήκευση ολοκληρώθηκε. Αποστολή response.' );
 
         wp_send_json_success( array(
             'shipper_name'         => $name,
@@ -731,6 +730,23 @@ class CC_Settings {
         echo '</select>';
     }
 
+    // ── BOX NOW Widget callbacks ──────────────────────────────────────────────
+
+    public function boxnow_section_callback() {
+        echo '<p>Ρυθμίσεις για το BOX NOW Locker addon στο checkout.</p>';
+    }
+
+    public function boxnow_enabled_field_callback( $args ) {
+        $value = get_option( $args['label_for'], '0' );
+        printf(
+            '<label><input type="checkbox" id="%s" name="%s" value="1" %s> %s</label>',
+            esc_attr( $args['label_for'] ),
+            esc_attr( $args['label_for'] ),
+            checked( $value, '1', false ),
+            esc_html__( 'Εμφάνιση επιλογής BOX NOW Locker στο checkout (κάτω από τα shipping methods)', 'courier-center-woocommerce' )
+        );
+    }
+
     /**
      * AJAX: Διαγραφή όλων των plugin options
      */
@@ -756,6 +772,7 @@ class CC_Settings {
             'cc_wc_email_tracking_enabled',
             'cc_wc_print_template',
             'cc_wc_print_template_boxnow',
+            'cc_wc_boxnow_enabled',
         );
 
         foreach ( $options as $option ) {

@@ -249,9 +249,20 @@ class CC_Shipment_Builder {
 
         // Add BOX NOW if requested
         if ( $boxnow ) {
-            $payload['LockerDeliveryInfo'] = array(
-                'Prefix' => 'BOXNOW',
-            );
+            $locker_id = $this->order->get_meta( '_boxnow_locker_id' );
+
+            if ( ! empty( $locker_id ) ) {
+                // Mode 3.2: Συγκεκριμένο locker επιλεγμένο από widget
+                $payload['LockerDeliveryInfo'] = array(
+                    'Prefix' => 'BOXNOW',
+                    'Code'   => (string) $locker_id,
+                );
+            } else {
+                // Mode 3.1: Find Nearest — το API βρίσκει το κοντινότερο locker
+                $payload['LockerDeliveryInfo'] = array(
+                    'Prefix' => 'BOXNOW',
+                );
+            }
         }
 
         // Add return AWB options
@@ -265,8 +276,6 @@ class CC_Shipment_Builder {
             $payload['GenerateReturnAWB']  = true;
         }
         // 'none' = δεν προσθέτουμε τίποτα (default συμπεριφορά)
-
-        error_log( 'CC PAYLOAD DEBUG: ' . wp_json_encode( $payload, JSON_UNESCAPED_UNICODE ) );
 
         return $payload;
     }

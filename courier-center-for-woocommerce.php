@@ -3,7 +3,7 @@
  * Plugin Name: Courier Center for WooCommerce
  * Plugin URI: https://courier.gr
  * Description: Ενσωμάτωση Courier Center με WooCommerce - Αυτόματη δημιουργία vouchers, tracking, και διαχείριση αποστολών
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: Courier Center
  * Author URI: https://courier.gr
  * Text Domain: courier-center-woocommerce
@@ -40,7 +40,7 @@ add_action( 'before_woocommerce_init', function() {
 class Courier_Center_WooCommerce {
 
     private static $instance = null;
-    const VERSION = '1.1.0';
+    const VERSION = '1.2.0';
     private $settings;
     private $order_meta_box;
     private $status_tracker;
@@ -77,6 +77,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-email-integration.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-boxnow-checkout.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-settings.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-order-meta-box.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-bulk-actions.php';
@@ -107,6 +108,7 @@ class Courier_Center_WooCommerce {
         $this->manifest_page = new CC_Manifest_Page();
         $this->email_integration = new CC_Email_Integration();
         $this->bug_report = new CC_Bug_Report();
+        new CC_BoxNow_Checkout();
         new CC_Updater();
     }
 

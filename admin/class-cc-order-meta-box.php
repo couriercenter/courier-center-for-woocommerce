@@ -18,6 +18,7 @@ class CC_Order_Meta_Box {
         add_action( 'wp_ajax_cc_create_voucher', array( $this, 'ajax_create_voucher' ) );
         add_action( 'wp_ajax_cc_void_shipment', array( $this, 'ajax_void_shipment' ) );
         add_action( 'wp_ajax_cc_update_status', array( $this, 'ajax_update_status' ) );
+        add_action( 'wp_ajax_cc_remove_boxnow', array( $this, 'ajax_remove_boxnow' ) );
 
         // PDF download handler
         add_action( 'admin_post_cc_download_voucher', array( $this, 'download_voucher_pdf' ) );
@@ -215,6 +216,46 @@ class CC_Order_Meta_Box {
                 });
             });
 
+            // Remove BOX NOW handler
+            \$(document).on('click', '#cc-remove-boxnow-btn', function(e) {
+                e.preventDefault();
+
+                if ( ! confirm('⚠️ Είστε σίγουροι ότι θέλετε να αφαιρέσετε την επιλογή BOX NOW;\\n\\nΗ παραγγελία θα δημιουργηθεί ως κανονική αποστολή Courier Center.') ) {
+                    return;
+                }
+
+                var \$button  = \$(this);
+                var \$status  = \$('#cc-ajax-status');
+                var orderId  = \$button.data('order-id');
+                var nonce    = \$button.data('nonce');
+
+                \$button.prop('disabled', true).text('⏳ Αφαίρεση...');
+                \$status.html('').removeClass('cc-error cc-success');
+
+                \$.ajax({
+                    url: ccOrderAjax.ajaxUrl,
+                    type: 'POST',
+                    data: {
+                        action: 'cc_remove_boxnow',
+                        nonce: nonce,
+                        order_id: orderId
+                    },
+                    success: function(response) {
+                        if (response.success) {
+                            \$status.addClass('cc-success').html('✅ ' + response.data.message);
+                            setTimeout(function() { location.reload(); }, 1000);
+                        } else {
+                            \$button.prop('disabled', false).text('↩️ Αφαίρεση επιλογής BOX NOW');
+                            \$status.addClass('cc-error').html('❌ ' + (response.data.message || 'Σφάλμα'));
+                        }
+                    },
+                    error: function(xhr, status, error) {
+                        \$button.prop('disabled', false).text('↩️ Αφαίρεση επιλογής BOX NOW');
+                        \$status.addClass('cc-error').html('❌ AJAX error: ' + error);
+                    }
+                });
+            });
+
         });
         ";
 
@@ -358,6 +399,18 @@ class CC_Order_Meta_Box {
                         <p><strong>Tracking:</strong> <?php echo esc_html( $tracking_number ); ?></p>
                     <?php endif; ?>
 
+                    <?php
+                    // Εμφάνιση locker info αν η παραγγελία είχε locker από checkout
+                    $display_locker_id   = $order->get_meta( '_boxnow_locker_id' );
+                    $display_locker_name = $order->get_meta( '_boxnow_locker_name' );
+                    if ( ! empty( $display_locker_id ) ) :
+                    ?>
+                        <div style="margin-top:8px; padding:8px 10px; background:#f0faf2; border:1px solid #7bc47f; border-radius:3px;">
+                            <strong style="color:#2c6e35;">📦 BOX NOW Locker</strong><br>
+                            <span style="font-size:12px;"><?php echo esc_html( $display_locker_name ?: $display_locker_id ); ?></span>
+                        </div>
+                    <?php endif; ?>
+
                     <?php if ( ! empty( $return_awb ) ) : ?>
                         <div style="margin-top: 10px; padding-top: 10px; border-top: 1px dashed #b8d4b8;">
                             <strong style="display: block; color: #1e6823;">↩️ Επιστροφικό (<?php echo esc_html( $return_labels_display[ $return_option ] ?? '' ); ?>)</strong>
@@ -406,7 +459,78 @@ class CC_Order_Meta_Box {
                 <div id="cc-ajax-status"></div>
 
             <?php else : ?>
-                <!-- CREATE VOUCHER STATE -->
+                <?php
+                // ── Ανίχνευση Mode A / AUTO (παραγγελία με BOX NOW από checkout) ──────
+                $boxnow_locker_id     = $order->get_meta( '_boxnow_locker_id' );
+                $boxnow_locker_name   = $order->get_meta( '_boxnow_locker_name' );
+                $boxnow_delivery_mode = $order->get_meta( '_boxnow_delivery_mode' );
+                $has_checkout_locker  = ! empty( $boxnow_locker_id );
+                $has_auto_locker      = ( $boxnow_delivery_mode === 'auto' && empty( $boxnow_locker_id ) );
+                ?>
+
+                <?php if ( $has_checkout_locker ) : ?>
+                <!-- ═══════════════════════════════════════════════════════════
+                     MODE A: Παραγγελία ΜΕ συγκεκριμένο locker (pick mode)
+                     ═══════════════════════════════════════════════════════════ -->
+
+                <div style="background:#f0faf2; border:1px solid #7bc47f; border-radius:4px; padding:10px 12px; margin-bottom:12px;">
+                    <strong>📦 BOX NOW Locker (επιλεγμένο από πελάτη)</strong><br>
+                    <span style="font-size:13px; color:#2c6e35; display:block; margin-top:4px;">
+                        <?php echo esc_html( $boxnow_locker_name ?: $boxnow_locker_id ); ?>
+                    </span>
+                    <small style="color:#888;">ID: <?php echo esc_html( $boxnow_locker_id ); ?></small>
+                </div>
+
+                <div id="cc-create-voucher-form">
+                    <input type="hidden" name="order_id"     value="<?php echo esc_attr( $order->get_id() ); ?>">
+                    <input type="hidden" name="service_type" value="next_day">
+                    <input type="hidden" name="boxnow"       value="1">
+                    <input type="hidden" name="return_option" value="none">
+                    <input type="hidden" name="parcel_count"  value="1">
+                    <button type="button" id="cc-create-voucher-btn" class="button button-primary" style="width:100%; height:36px;">
+                        🚀 Δημιουργία BOX NOW Voucher
+                    </button>
+                </div>
+
+                <div id="cc-ajax-status"></div>
+
+                <?php elseif ( $has_auto_locker ) : ?>
+                <!-- ═══════════════════════════════════════════════════════════
+                     MODE AUTO: Παραγγελία με αυτόματη εύρεση locker
+                     ═══════════════════════════════════════════════════════════ -->
+
+                <div style="background:#fff8e1; border:1px solid #ffc107; border-radius:4px; padding:10px 12px; margin-bottom:12px;">
+                    <strong>📦 BOX NOW — Αυτόματη εύρεση Locker</strong><br>
+                    <span style="font-size:12px; color:#7a6000; display:block; margin-top:4px;">
+                        Ο πελάτης επέλεξε αυτόματη παράδοση στο κοντινότερο διαθέσιμο BOX NOW Locker.
+                    </span>
+                </div>
+
+                <div id="cc-create-voucher-form">
+                    <input type="hidden" name="order_id"      value="<?php echo esc_attr( $order->get_id() ); ?>">
+                    <input type="hidden" name="service_type"  value="next_day">
+                    <input type="hidden" name="boxnow"        value="1">
+                    <input type="hidden" name="return_option" value="none">
+                    <input type="hidden" name="parcel_count"  value="1">
+                    <button type="button" id="cc-create-voucher-btn" class="button button-primary" style="width:100%; height:36px;">
+                        🚀 Δημιουργία BOX NOW Voucher
+                    </button>
+                </div>
+
+                <button type="button" id="cc-remove-boxnow-btn" class="button button-secondary"
+                        style="width:100%; margin-top:8px; color:#8b4513;"
+                        data-order-id="<?php echo esc_attr( $order->get_id() ); ?>"
+                        data-nonce="<?php echo esc_attr( wp_create_nonce( 'cc_remove_boxnow_' . $order->get_id() ) ); ?>">
+                    ↩️ Αφαίρεση επιλογής BOX NOW
+                </button>
+
+                <div id="cc-ajax-status"></div>
+
+                <?php else : ?>
+                <!-- ═══════════════════════════════════════════════════════════
+                     MODE B: Κανονική παραγγελία — όλες οι επιλογές
+                     ═══════════════════════════════════════════════════════════ -->
+
                 <p style="margin-bottom: 10px;">Δημιουργήστε voucher για αυτή την παραγγελία:</p>
 
                 <div id="cc-create-voucher-form">
@@ -472,7 +596,9 @@ class CC_Order_Meta_Box {
 
                 <div id="cc-ajax-status"></div>
 
-            <?php endif; ?>
+                <?php endif; // Mode A / AUTO / Mode B ?>
+
+            <?php endif; // voucher exists or not ?>
         </div>
         <?php
     }
@@ -510,7 +636,9 @@ class CC_Order_Meta_Box {
         }
 
         $service_type = isset( $_POST['service_type'] ) ? sanitize_text_field( $_POST['service_type'] ) : 'next_day';
-        $boxnow       = isset( $_POST['boxnow'] ) && $_POST['boxnow'] === '1';
+        $boxnow       = ( isset( $_POST['boxnow'] ) && $_POST['boxnow'] === '1' )
+                        || ! empty( $order->get_meta( '_boxnow_locker_id' ) )
+                        || $order->get_meta( '_boxnow_delivery_mode' ) === 'auto';
         $parcel_count = isset( $_POST['parcel_count'] ) ? intval( $_POST['parcel_count'] ) : 1;
         $parcel_count = max( 1, min( 99, $parcel_count ) );
 
@@ -554,8 +682,6 @@ class CC_Order_Meta_Box {
         $tracking_number = isset( $result['TrackingNumbers'][0] ) ? $result['TrackingNumbers'][0] : $voucher_number;
 
         if ( empty( $voucher_number ) ) {
-            error_log( 'CC BOX NOW DEBUG: ' . print_r( $result, true ) );
-            error_log( 'CC VOUCHER ERROR - Raw result: ' . wp_json_encode( $result ) );
             $api_message = $result['Errors'][0]['Message']
                 ?? $result['ErrorMessage']
                 ?? $result['Message']
@@ -602,8 +728,36 @@ class CC_Order_Meta_Box {
             }
         }
 
-        if ( $boxnow && isset( $result['ContractorResultNote'] ) && stripos( $result['ContractorResultNote'], 'No locker found' ) !== false ) {
-            $order->update_meta_data( '_cc_boxnow_fallback', '1' );
+        if ( $boxnow ) {
+            error_log( 'CC BOXNOW RESPONSE: ' . wp_json_encode( $result, JSON_UNESCAPED_UNICODE ) );
+        }
+
+        $boxnow_fallback      = false;
+        $assigned_locker_code = '';
+
+        if ( $boxnow ) {
+            $contractor_note = $result['ContractorResultNote'] ?? '';
+
+            if ( stripos( $contractor_note, 'No locker found' ) !== false ) {
+                $boxnow_fallback = true;
+                $order->update_meta_data( '_cc_boxnow_fallback', '1' );
+            } else {
+                $assigned_locker_code = $result['AssignedLockerCode']
+                    ?? $result['LockerCode']
+                    ?? $result['DestinationLockerCode']
+                    ?? $result['LockerDeliveryInfo']['Code']
+                    ?? '';
+
+                if ( empty( $assigned_locker_code ) && ! empty( $contractor_note ) ) {
+                    if ( preg_match( '/locker[:\s#]*(\w+)/i', $contractor_note, $m ) ) {
+                        $assigned_locker_code = $m[1];
+                    }
+                }
+
+                if ( ! empty( $assigned_locker_code ) ) {
+                    $order->update_meta_data( '_cc_boxnow_assigned_locker', $assigned_locker_code );
+                }
+            }
         }
 
         $order->save();
@@ -636,8 +790,17 @@ class CC_Order_Meta_Box {
             $note .= ' | Return AWB: ' . $return_awb;
         }
 
-        if ( $boxnow && isset( $result['ContractorResultNote'] ) && stripos( $result['ContractorResultNote'], 'No locker found' ) !== false ) {
-            $note .= ' | ⚠️ Δεν βρέθηκε locker - αποστέλλεται door-to-door';
+        if ( $boxnow ) {
+            if ( $boxnow_fallback ) {
+                $note .= ' | ⚠️ Δεν βρέθηκε locker - αποστέλλεται door-to-door';
+            } elseif ( ! empty( $assigned_locker_code ) ) {
+                $requested_code = $order->get_meta( '_boxnow_locker_id' );
+                if ( ! empty( $requested_code ) && $requested_code !== $assigned_locker_code ) {
+                    $note .= ' | 📦 Locker: ' . $assigned_locker_code . ' (ζητήθηκε: ' . $requested_code . ')';
+                } else {
+                    $note .= ' | 📦 Locker: ' . $assigned_locker_code;
+                }
+            }
         }
 
         $order->add_order_note( $note );
@@ -922,7 +1085,6 @@ class CC_Order_Meta_Box {
         }
 
         if ( empty( $status_code ) && empty( $status_desc ) ) {
-            error_log( 'CC STATUS DEBUG - Raw response: ' . wp_json_encode( $result ) );
             wp_send_json_error( array( 'message' => 'Δεν βρέθηκε status στο API response.' ) );
         }
 
@@ -960,5 +1122,36 @@ class CC_Order_Meta_Box {
             'status_desc' => $status_desc,
             'action_code' => $action_code,
         ) );
+    }
+
+    /**
+     * AJAX handler to remove BOX NOW selection from an order
+     */
+    public function ajax_remove_boxnow() {
+        $order_id = isset( $_POST['order_id'] ) ? intval( $_POST['order_id'] ) : 0;
+
+        if ( ! $order_id || ! isset( $_POST['nonce'] ) ||
+             ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'cc_remove_boxnow_' . $order_id ) ) {
+            wp_send_json_error( array( 'message' => 'Σφάλμα ασφαλείας.' ) );
+        }
+
+        if ( ! current_user_can( 'edit_shop_orders' ) ) {
+            wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        }
+
+        $order = wc_get_order( $order_id );
+        if ( ! $order ) {
+            wp_send_json_error( array( 'message' => 'Order not found' ) );
+        }
+
+        $order->delete_meta_data( '_boxnow_delivery_mode' );
+        $order->delete_meta_data( '_boxnow_locker_id' );
+        $order->delete_meta_data( '_boxnow_locker_code' );
+        $order->delete_meta_data( '_boxnow_locker_name' );
+        $order->save();
+
+        $order->add_order_note( '↩️ Η επιλογή BOX NOW αφαιρέθηκε από τον merchant. Η παραγγελία θα αποσταλεί ως κανονική αποστολή.' );
+
+        wp_send_json_success( array( 'message' => 'Η επιλογή BOX NOW αφαιρέθηκε.' ) );
     }
 }
