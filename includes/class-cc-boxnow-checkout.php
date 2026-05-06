@@ -5,9 +5,24 @@ class CC_BoxNow_Checkout {
 
     public function __construct() {
         add_action( 'wp_enqueue_scripts',                      array( $this, 'enqueue_assets' ) );
+
+        // Classic checkout
         add_action( 'woocommerce_review_order_after_shipping', array( $this, 'render_widget_html_div' ) );
         add_action( 'woocommerce_checkout_process',            array( $this, 'validate_locker_selection' ) );
         add_action( 'woocommerce_checkout_update_order_meta',  array( $this, 'save_locker_meta' ) );
+
+        // Block checkout
+        add_action( 'wp_footer',                               array( $this, 'render_widget_for_block_checkout' ) );
+        add_action( 'woocommerce_store_api_checkout_update_order_from_request', array( $this, 'save_locker_meta_blocks' ), 10, 2 );
+
+        // AJAX session save (block checkout)
+        add_action( 'wp_ajax_cc_boxnow_save_session',          array( $this, 'ajax_save_session' ) );
+        add_action( 'wp_ajax_nopriv_cc_boxnow_save_session',   array( $this, 'ajax_save_session' ) );
+    }
+
+    private function is_block_checkout() {
+        global $post;
+        return $post && has_block( 'woocommerce/checkout', $post->post_content );
     }
 
     public function enqueue_assets() {
@@ -29,19 +44,35 @@ class CC_BoxNow_Checkout {
         );
 
         wp_localize_script( 'cc-boxnow-checkout', 'ccBoxNow', array(
-            'partnerId' => 10853,
+            'partnerId'       => 10853,
+            'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
+            'sessionNonce'    => wp_create_nonce( 'cc_boxnow_session_nonce' ),
+            'isBlockCheckout' => $this->is_block_checkout() ? '1' : '0',
         ) );
     }
 
     public function render_widget_html_div() {
         $enabled = get_option( 'cc_wc_boxnow_enabled', '0' );
         if ( $enabled !== '1' ) return;
+        if ( $this->is_block_checkout() ) return;
         ?>
         <tr class="cc-boxnow-addon-row">
             <td colspan="2" class="cc-boxnow-addon-cell">
                 <?php $this->render_widget_inner(); ?>
             </td>
         </tr>
+        <?php
+    }
+
+    public function render_widget_for_block_checkout() {
+        if ( ! is_checkout() ) return;
+        if ( ! $this->is_block_checkout() ) return;
+        $enabled = get_option( 'cc_wc_boxnow_enabled', '0' );
+        if ( $enabled !== '1' ) return;
+        ?>
+        <div id="cc-boxnow-block-wrapper" style="display:none;">
+            <?php $this->render_widget_inner(); ?>
+        </div>
         <?php
     }
 
@@ -126,6 +157,45 @@ class CC_BoxNow_Checkout {
         </div>
 
         <?php
+    }
+
+    public function ajax_save_session() {
+        if ( ! isset( $_POST['nonce'] ) ||
+             ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['nonce'] ) ), 'cc_boxnow_session_nonce' ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid nonce' ) );
+            return;
+        }
+
+        if ( ! WC()->session ) {
+            wp_send_json_error( array( 'message' => 'No session' ) );
+            return;
+        }
+
+        WC()->session->set( 'cc_boxnow_selection', array(
+            'selected'      => ! empty( $_POST['selected'] ),
+            'delivery_mode' => isset( $_POST['delivery_mode'] ) ? sanitize_text_field( wp_unslash( $_POST['delivery_mode'] ) ) : '',
+            'locker_id'     => isset( $_POST['locker_id'] )     ? sanitize_text_field( wp_unslash( $_POST['locker_id'] ) )     : '',
+            'locker_code'   => isset( $_POST['locker_code'] )   ? sanitize_text_field( wp_unslash( $_POST['locker_code'] ) )   : '',
+            'locker_name'   => isset( $_POST['locker_name'] )   ? sanitize_text_field( wp_unslash( $_POST['locker_name'] ) )   : '',
+        ) );
+
+        wp_send_json_success();
+    }
+
+    public function save_locker_meta_blocks( $order, $request ) {
+        if ( ! WC()->session ) return;
+        $data = WC()->session->get( 'cc_boxnow_selection' );
+        if ( empty( $data ) || empty( $data['selected'] ) ) return;
+
+        $order->update_meta_data( '_boxnow_delivery_mode', $data['delivery_mode'] );
+
+        if ( ! empty( $data['locker_id'] ) ) {
+            $order->update_meta_data( '_boxnow_locker_id',   $data['locker_id'] );
+            $order->update_meta_data( '_boxnow_locker_code', $data['locker_code'] ?: $data['locker_id'] );
+            $order->update_meta_data( '_boxnow_locker_name', $data['locker_name'] );
+        }
+
+        WC()->session->set( 'cc_boxnow_selection', null );
     }
 
     public function validate_locker_selection() {
