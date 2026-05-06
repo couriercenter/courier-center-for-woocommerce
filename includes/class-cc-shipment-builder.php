@@ -254,7 +254,7 @@ class CC_Shipment_Builder {
             if ( ! empty( $locker_id ) ) {
                 // Mode 3.2: Συγκεκριμένο locker επιλεγμένο από widget
                 $payload['LockerDeliveryInfo'] = array(
-                    'Prefix' => 'BOXNOW',
+                    'Prefix' => 'ATH',
                     'Code'   => (string) $locker_id,
                 );
             } else {
