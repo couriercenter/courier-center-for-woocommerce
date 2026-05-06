@@ -1,0 +1,429 @@
+/**
+ * BOX NOW Checkout Widget
+ * Professional, theme-agnostic — works with any WooCommerce theme
+ */
+
+/* ─────────────────────────────────────────
+   Hidden / Visible states
+───────────────────────────────────────── */
+#cc-boxnow-options,
+#cc-boxnow-auto-confirm,
+#cc-boxnow-selected-info {
+    display: none !important;
+}
+#cc-boxnow-options.cc-visible          { display: block !important; }
+#cc-boxnow-auto-confirm.cc-visible,
+#cc-boxnow-selected-info.cc-visible    { display: flex !important; }
+
+/* ─────────────────────────────────────────
+   Checkout table row reset
+───────────────────────────────────────── */
+tr.cc-boxnow-addon-row td,
+.cc-boxnow-addon-cell {
+    padding: 6px 0 2px !important;
+    border: none !important;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+
+/* ─────────────────────────────────────────
+   Widget wrapper
+───────────────────────────────────────── */
+#cc-boxnow-widget-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 4px 0 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+    font-size: 14px !important;
+    color: #1a1a1a !important;
+    line-height: 1.5 !important;
+    box-sizing: border-box !important;
+}
+
+/* ─────────────────────────────────────────
+   Toggle label
+───────────────────────────────────────── */
+.cc-boxnow-toggle-label {
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 11px 14px !important;
+    background: #ffffff !important;
+    border: 1.5px solid #e0e0e0 !important;
+    border-radius: 10px !important;
+    cursor: pointer !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.07) !important;
+    transition: border-color .2s ease, box-shadow .2s ease !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+    user-select: none !important;
+}
+
+.cc-boxnow-toggle-label:hover {
+    border-color: #5DC122 !important;
+    box-shadow: 0 2px 8px rgba(93,193,34,0.15) !important;
+}
+
+.cc-boxnow-toggle-label input[type="checkbox"] {
+    width: 17px !important;
+    height: 17px !important;
+    accent-color: #5DC122 !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+    margin: 0 !important;
+}
+
+.cc-boxnow-logo {
+    height: 26px !important;
+    width: auto !important;
+    border-radius: 5px !important;
+    flex-shrink: 0 !important;
+    display: block !important;
+}
+
+.cc-boxnow-toggle-text {
+    flex: 1 !important;
+    font-size: 13.5px !important;
+    color: #333 !important;
+    font-weight: 400 !important;
+    line-height: 1.4 !important;
+}
+
+.cc-boxnow-toggle-text strong {
+    font-weight: 700 !important;
+    color: #111 !important;
+    display: inline !important;
+}
+
+.cc-boxnow-toggle-arrow {
+    font-size: 18px !important;
+    color: #bbb !important;
+    line-height: 1 !important;
+    flex-shrink: 0 !important;
+    transition: color .2s !important;
+}
+
+.cc-boxnow-toggle-label:hover .cc-boxnow-toggle-arrow {
+    color: #5DC122 !important;
+}
+
+/* ─────────────────────────────────────────
+   Options panel
+───────────────────────────────────────── */
+#cc-boxnow-options {
+    margin-top: 6px !important;
+    padding: 14px !important;
+    background: #ffffff !important;
+    border: 1.5px solid #e8e8e8 !important;
+    border-radius: 10px !important;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05) !important;
+    box-sizing: border-box !important;
+}
+
+/* ─────────────────────────────────────────
+   Mode label
+───────────────────────────────────────── */
+.cc-boxnow-mode-label {
+    margin: 0 0 10px !important;
+    padding: 0 !important;
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    letter-spacing: .5px !important;
+    color: #888 !important;
+}
+
+/* ─────────────────────────────────────────
+   Mode buttons
+───────────────────────────────────────── */
+.cc-boxnow-mode-buttons {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+}
+
+.cc-boxnow-mode-btn {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    width: 100% !important;
+    padding: 12px 14px !important;
+    background: #fafafa !important;
+    border: 1.5px solid #e0e0e0 !important;
+    border-radius: 8px !important;
+    cursor: pointer !important;
+    text-align: left !important;
+    transition: border-color .2s ease, background .2s ease, box-shadow .2s ease !important;
+    box-sizing: border-box !important;
+    color: #222 !important;
+}
+
+.cc-boxnow-mode-btn:hover {
+    border-color: #5DC122 !important;
+    background: #f7fdf2 !important;
+    box-shadow: 0 2px 8px rgba(93,193,34,0.12) !important;
+}
+
+.cc-boxnow-mode-btn--primary {
+    border-color: #c8eaa8 !important;
+    background: #f7fdf2 !important;
+}
+
+.cc-boxnow-mode-btn--primary:hover {
+    border-color: #5DC122 !important;
+    background: #eef9e3 !important;
+    box-shadow: 0 2px 10px rgba(93,193,34,0.18) !important;
+}
+
+.cc-bn-btn-icon {
+    font-size: 20px !important;
+    line-height: 1 !important;
+    flex-shrink: 0 !important;
+}
+
+.cc-bn-btn-text {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 1px !important;
+}
+
+.cc-bn-btn-text strong {
+    font-size: 13.5px !important;
+    font-weight: 600 !important;
+    color: #111 !important;
+    line-height: 1.3 !important;
+    display: block !important;
+}
+
+.cc-bn-btn-text small {
+    font-size: 11.5px !important;
+    color: #777 !important;
+    font-weight: 400 !important;
+    line-height: 1.3 !important;
+    display: block !important;
+}
+
+/* ─────────────────────────────────────────
+   Confirm states (auto + pick)
+───────────────────────────────────────── */
+.cc-boxnow-auto-confirm,
+.cc-boxnow-selected-info {
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 11px 14px !important;
+    border-radius: 8px !important;
+    box-sizing: border-box !important;
+    width: 100% !important;
+}
+
+.cc-boxnow-auto-confirm {
+    background: #f4fcea !important;
+    border: 1.5px solid #b5e08a !important;
+}
+
+.cc-boxnow-selected-info {
+    background: #f4fcea !important;
+    border: 1.5px solid #b5e08a !important;
+}
+
+.cc-boxnow-auto-confirm span,
+.cc-boxnow-selected-info span {
+    flex: 1 !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: #2a6b0a !important;
+    line-height: 1.4 !important;
+}
+
+.cc-bn-check-icon {
+    width: 20px !important;
+    height: 20px !important;
+    flex-shrink: 0 !important;
+    display: block !important;
+}
+
+/* ─────────────────────────────────────────
+   Change button
+───────────────────────────────────────── */
+.cc-boxnow-change-btn {
+    background: #fff !important;
+    border: 1.5px solid #d0d0d0 !important;
+    border-radius: 6px !important;
+    padding: 5px 11px !important;
+    font-size: 12px !important;
+    font-weight: 500 !important;
+    color: #555 !important;
+    cursor: pointer !important;
+    flex-shrink: 0 !important;
+    white-space: nowrap !important;
+    line-height: 1.4 !important;
+    transition: border-color .2s, color .2s, background .2s !important;
+    font-family: inherit !important;
+}
+
+.cc-boxnow-change-btn:hover {
+    border-color: #5DC122 !important;
+    color: #3a8a0f !important;
+    background: #f7fdf2 !important;
+}
+
+/* ─────────────────────────────────────────
+   SDK trigger — hidden, only for BoxNow SDK
+───────────────────────────────────────── */
+.boxnow-map-widget-button {
+    display: none !important;
+}
+
+/* ─────────────────────────────────────────
+   Modal overlay
+───────────────────────────────────────── */
+#cc-boxnow-modal-overlay {
+    display: none;
+    position: fixed !important;
+    inset: 0 !important;
+    background: rgba(0,0,0,0.55) !important;
+    z-index: 999999 !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 20px !important;
+    box-sizing: border-box !important;
+    -webkit-backdrop-filter: blur(3px) !important;
+    backdrop-filter: blur(3px) !important;
+}
+
+#cc-boxnow-modal-overlay.cc-open {
+    display: flex !important;
+}
+
+/* ─────────────────────────────────────────
+   Modal box
+───────────────────────────────────────── */
+#cc-boxnow-modal {
+    background: #ffffff !important;
+    border-radius: 14px !important;
+    width: 100% !important;
+    max-width: 900px !important;
+    max-height: 90vh !important;
+    overflow: hidden !important;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.22), 0 4px 16px rgba(0,0,0,0.1) !important;
+    display: flex !important;
+    flex-direction: column !important;
+    animation: cc-modal-in .22s ease !important;
+}
+
+@keyframes cc-modal-in {
+    from { opacity: 0; transform: translateY(10px) scale(.98); }
+    to   { opacity: 1; transform: translateY(0)   scale(1);    }
+}
+
+/* ─────────────────────────────────────────
+   Modal header
+───────────────────────────────────────── */
+#cc-boxnow-modal-header {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 13px 18px !important;
+    background: #fff !important;
+    border-bottom: 1px solid #efefef !important;
+    flex-shrink: 0 !important;
+}
+
+.cc-boxnow-modal-logo {
+    height: 28px !important;
+    width: auto !important;
+    border-radius: 5px !important;
+    flex-shrink: 0 !important;
+    display: block !important;
+}
+
+#cc-boxnow-modal-header > span {
+    flex: 1 !important;
+    font-size: 14.5px !important;
+    font-weight: 600 !important;
+    color: #222 !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+}
+
+#cc-boxnow-modal-close {
+    width: 30px !important;
+    height: 30px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: #f3f3f3 !important;
+    border: none !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    color: #555 !important;
+    flex-shrink: 0 !important;
+    padding: 0 !important;
+    transition: background .15s, color .15s !important;
+}
+
+#cc-boxnow-modal-close:hover {
+    background: #e6e6e6 !important;
+    color: #111 !important;
+}
+
+#cc-boxnow-modal-close svg {
+    width: 12px !important;
+    height: 12px !important;
+    display: block !important;
+}
+
+/* ─────────────────────────────────────────
+   Map container
+───────────────────────────────────────── */
+#boxnowmap {
+    width: 100% !important;
+    min-height: 520px !important;
+    flex: 1 !important;
+    overflow: hidden !important;
+    display: block !important;
+}
+
+#boxnowmap iframe {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 520px !important;
+    border: none !important;
+    display: block !important;
+}
+
+/* ─────────────────────────────────────────
+   Mobile
+───────────────────────────────────────── */
+@media (max-width: 640px) {
+    #cc-boxnow-modal-overlay {
+        padding: 0 !important;
+        align-items: flex-end !important;
+        -webkit-backdrop-filter: none !important;
+        backdrop-filter: none !important;
+    }
+
+    #cc-boxnow-modal {
+        border-radius: 18px 18px 0 0 !important;
+        max-height: 92vh !important;
+        box-shadow: 0 -6px 32px rgba(0,0,0,0.18) !important;
+        animation: cc-modal-in-mobile .25s ease !important;
+    }
+
+    @keyframes cc-modal-in-mobile {
+        from { opacity: 0; transform: translateY(40px); }
+        to   { opacity: 1; transform: translateY(0);    }
+    }
+
+    #boxnowmap {
+        min-height: 400px !important;
+    }
+
+    .cc-boxnow-auto-confirm,
+    .cc-boxnow-selected-info {
+        flex-wrap: wrap !important;
+    }
+
+    .cc-bn-btn-text small {
+        display: none !important;
+    }
+}
