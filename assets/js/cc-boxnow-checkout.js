@@ -107,7 +107,7 @@
         }
         if ( ! widgetWrapper ) return;
 
-        var shippingBlock = document.querySelector( '.wp-block-woocommerce-checkout-shipping-methods-block' );
+        var shippingBlock = document.querySelector( '.wp-block-woocommerce-checkout-shipping-method-block' );
         if ( ! shippingBlock ) return;
 
         // Re-inject if removed from DOM or not in the right position
