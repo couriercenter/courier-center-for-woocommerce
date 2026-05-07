@@ -36,14 +36,15 @@
         } );
     }
 
+    // FIX #3: CSS class αντί για inline style — δεν συγκρούεται με άλλα plugins/modals
     function openModal() {
         $( '#cc-boxnow-modal-overlay' ).addClass( 'cc-open' );
-        $( 'body' ).css( 'overflow', 'hidden' );
+        $( 'body' ).addClass( 'cc-modal-open' );
     }
 
     function closeModal() {
         $( '#cc-boxnow-modal-overlay' ).removeClass( 'cc-open' );
-        $( 'body' ).css( 'overflow', '' );
+        $( 'body' ).removeClass( 'cc-modal-open' );
     }
 
     // Αντικαθιστά το #boxnowmap με νέο κενό div — φρέσκο container για το SDK
@@ -51,7 +52,21 @@
         $( '#boxnowmap' ).replaceWith( '<div id="boxnowmap"></div>' );
     }
 
-    // Φορτώνει το SDK και εκτελεί callback όταν είναι έτοιμο
+    function showSdkError() {
+        closeModal();
+        $( '#cc-boxnow-mode-select' ).addClass( 'cc-visible' );
+        $( '#cc-boxnow-auto-confirm' ).removeClass( 'cc-visible' );
+        $( '#cc-boxnow-selected-info' ).removeClass( 'cc-visible' );
+        if ( ! $( '#cc-boxnow-sdk-error' ).length ) {
+            $( '#cc-boxnow-options' ).prepend(
+                '<p id="cc-boxnow-sdk-error" class="cc-boxnow-sdk-error">' +
+                'Ο χάρτης δεν είναι διαθέσιμος αυτή τη στιγμή. Δοκίμασε την αυτόματη εύρεση.' +
+                '</p>'
+            );
+        }
+    }
+
+    // FIX #2: Προσθήκη onerror — εμφανίζει μήνυμα αν το BOX NOW CDN δεν φορτώσει
     function loadSdk( callback ) {
         if ( sdkLoaded ) {
             if ( callback ) callback();
@@ -63,7 +78,12 @@
         s.src   = 'https://widget-cdn.boxnow.gr/map-widget/client/v5.js';
         s.async = false;
         s.onload = function () {
+            $( '#cc-boxnow-sdk-error' ).remove();
             if ( callback ) callback();
+        };
+        s.onerror = function () {
+            sdkLoaded = false;
+            showSdkError();
         };
         document.head.appendChild( s );
     }
@@ -97,9 +117,10 @@
         $( '#cc-boxnow-auto-confirm' ).removeClass( 'cc-visible' );
         $( '#cc-boxnow-selected-info' ).removeClass( 'cc-visible' );
         $( '#cc-boxnow-mode-select' ).addClass( 'cc-visible' );
+        $( '#cc-boxnow-sdk-error' ).remove();
     }
 
-    // ─── Block Checkout: inject widget after shipping methods block ───────────
+    // ─── Block Checkout: inject widget before payment block (bottom of form) ───
 
     function injectWidgetInBlockCheckout() {
         if ( ! widgetWrapper ) {
@@ -107,12 +128,13 @@
         }
         if ( ! widgetWrapper ) return;
 
-        var shippingBlock = document.querySelector( '.wp-block-woocommerce-checkout-shipping-method-block' );
-        if ( ! shippingBlock ) return;
+        // Τοποθέτηση πριν το payment block (κάτω μέρος της φόρμας)
+        var paymentBlock = document.querySelector( '.wp-block-woocommerce-checkout-payment-block' );
+        if ( ! paymentBlock ) return;
 
         // Re-inject if removed from DOM or not in the right position
-        if ( ! document.body.contains( widgetWrapper ) || shippingBlock.nextElementSibling !== widgetWrapper ) {
-            shippingBlock.insertAdjacentElement( 'afterend', widgetWrapper );
+        if ( ! document.body.contains( widgetWrapper ) || paymentBlock.previousElementSibling !== widgetWrapper ) {
+            paymentBlock.insertAdjacentElement( 'beforebegin', widgetWrapper );
             widgetWrapper.style.display = '';
         }
     }
@@ -121,16 +143,20 @@
 
     $( document ).ready( function () {
 
-        // Block checkout: μεταφέρει το widget μετά τα shipping methods
+        // Block checkout: τοποθετεί το widget πριν το payment block
         if ( isBlockCheckout ) {
-            // Δοκιμές κατά την hydration του React
+            // FIX #1: Προσθήκη 2500ms για αργά sites / μεγάλα themes
             setTimeout( injectWidgetInBlockCheckout, 200 );
             setTimeout( injectWidgetInBlockCheckout, 600 );
             setTimeout( injectWidgetInBlockCheckout, 1200 );
+            setTimeout( injectWidgetInBlockCheckout, 2500 );
 
-            // Ανανεώνει αν το React αφαιρέσει το widget κατά re-render
+            // Ανανεώνει αν το React αφαιρέσει ή μετακινήσει το widget κατά re-render
             setInterval( function () {
-                if ( widgetWrapper && ! document.body.contains( widgetWrapper ) ) {
+                if ( ! widgetWrapper ) return;
+                var paymentBlock = document.querySelector( '.wp-block-woocommerce-checkout-payment-block' );
+                if ( ! paymentBlock ) return;
+                if ( ! document.body.contains( widgetWrapper ) || paymentBlock.previousElementSibling !== widgetWrapper ) {
                     injectWidgetInBlockCheckout();
                 }
             }, 800 );
