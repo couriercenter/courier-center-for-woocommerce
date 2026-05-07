@@ -299,6 +299,43 @@ body.cc-modal-open {
 }
 
 /* ─────────────────────────────────────────
+   Validation error — δεν επέλεξε τρόπο
+───────────────────────────────────────── */
+#cc-boxnow-widget-wrap.cc-has-error .cc-boxnow-toggle-label {
+    border-color: #e53e3e !important;
+    box-shadow: 0 0 0 3px rgba(229,62,62,0.12) !important;
+    animation: cc-shake .35s ease !important;
+}
+
+@keyframes cc-shake {
+    0%, 100% { transform: translateX(0); }
+    20%       { transform: translateX(-5px); }
+    40%       { transform: translateX(5px); }
+    60%       { transform: translateX(-3px); }
+    80%       { transform: translateX(3px); }
+}
+
+.cc-boxnow-validation-error {
+    display: flex !important;
+    align-items: flex-start !important;
+    gap: 9px !important;
+    margin-top: 8px !important;
+    padding: 11px 14px !important;
+    background: #fff5f5 !important;
+    border: 1.5px solid #feb2b2 !important;
+    border-radius: 8px !important;
+    font-size: 13px !important;
+    color: #c53030 !important;
+    line-height: 1.5 !important;
+    box-sizing: border-box !important;
+}
+
+.cc-boxnow-validation-error span strong {
+    font-weight: 700 !important;
+    color: #9b1c1c !important;
+}
+
+/* ─────────────────────────────────────────
    Modal overlay
 ───────────────────────────────────────── */
 #cc-boxnow-modal-overlay {

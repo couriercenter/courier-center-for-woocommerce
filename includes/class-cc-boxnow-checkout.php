@@ -187,6 +187,22 @@ class CC_BoxNow_Checkout {
         $data = WC()->session->get( 'cc_boxnow_selection' );
         if ( empty( $data ) || empty( $data['selected'] ) ) return;
 
+        if ( empty( $data['delivery_mode'] ) ) {
+            throw new \Automattic\WooCommerce\StoreApi\Exceptions\RouteException(
+                'cc_boxnow_no_mode',
+                __( 'Επιλέξατε παράδοση BOX NOW αλλά δεν ολοκληρώσατε την επιλογή. Διαλέξτε "Αυτόματη εύρεση" ή "Επιλογή από χάρτη", ή αποεπιλέξτε το BOX NOW για να συνεχίσετε.', 'courier-center-woocommerce' ),
+                400
+            );
+        }
+
+        if ( $data['delivery_mode'] === 'pick' && empty( $data['locker_id'] ) ) {
+            throw new \Automattic\WooCommerce\StoreApi\Exceptions\RouteException(
+                'cc_boxnow_no_locker',
+                __( 'Επιλέξατε παράδοση σε συγκεκριμένο BOX NOW Locker αλλά δεν επιλέξατε locker από τον χάρτη.', 'courier-center-woocommerce' ),
+                400
+            );
+        }
+
         $order->update_meta_data( '_boxnow_delivery_mode', $data['delivery_mode'] );
 
         if ( ! empty( $data['locker_id'] ) ) {

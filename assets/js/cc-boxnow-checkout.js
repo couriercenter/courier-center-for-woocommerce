@@ -66,6 +66,29 @@
         }
     }
 
+    function showValidationError( msg ) {
+        $( '#cc-boxnow-widget-wrap' ).addClass( 'cc-has-error' );
+        if ( ! $( '#cc-boxnow-validation-error' ).length ) {
+            $( '#cc-boxnow-widget-wrap' ).append(
+                '<div id="cc-boxnow-validation-error" class="cc-boxnow-validation-error">' +
+                '<svg viewBox="0 0 20 20" fill="none" width="16" height="16" style="flex-shrink:0;display:block">' +
+                '<circle cx="10" cy="10" r="9" stroke="#c53030" stroke-width="1.8"/>' +
+                '<path d="M10 5.5v5.5" stroke="#c53030" stroke-width="1.8" stroke-linecap="round"/>' +
+                '<circle cx="10" cy="14" r="1" fill="#c53030"/>' +
+                '</svg>' +
+                '<span>' + msg + '</span>' +
+                '</div>'
+            );
+        }
+        var wrap = document.getElementById( 'cc-boxnow-widget-wrap' );
+        if ( wrap ) wrap.scrollIntoView( { behavior: 'smooth', block: 'center' } );
+    }
+
+    function clearValidationError() {
+        $( '#cc-boxnow-widget-wrap' ).removeClass( 'cc-has-error' );
+        $( '#cc-boxnow-validation-error' ).remove();
+    }
+
     // FIX #2: Προσθήκη onerror — εμφανίζει μήνυμα αν το BOX NOW CDN δεν φορτώσει
     function loadSdk( callback ) {
         if ( sdkLoaded ) {
@@ -173,8 +196,30 @@
                 $( '#cc-boxnow-options' ).removeClass( 'cc-visible' );
                 resetBoxNowOptions();
             }
+            clearValidationError();
             syncSession();
         } );
+
+        // Block checkout: interception του Place Order button για client-side validation
+        if ( isBlockCheckout ) {
+            $( document ).on( 'click', '.wc-block-components-checkout-place-order-button', function ( e ) {
+                if ( ! $( '#cc-boxnow-toggle' ).is( ':checked' ) ) return;
+                var mode = $( '#cc_boxnow_delivery_mode' ).val();
+                if ( ! mode ) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    showValidationError( 'Επέλεξες BOX NOW αλλά δεν ολοκλήρωσες την επιλογή. Διάλεξε <strong>Αυτόματη εύρεση</strong> ή <strong>Επιλογή από χάρτη</strong>, ή αποεπέλεξε το BOX NOW για να συνεχίσεις.' );
+                    return false;
+                }
+                if ( mode === 'pick' && ! $( '#cc_boxnow_locker_id' ).val() ) {
+                    e.preventDefault();
+                    e.stopImmediatePropagation();
+                    showValidationError( 'Επέλεξες παράδοση σε συγκεκριμένο Locker αλλά δεν επέλεξες Locker από τον χάρτη. Πάτα <strong>Επιλογή από χάρτη</strong> για να διαλέξεις.' );
+                    return false;
+                }
+                clearValidationError();
+            } );
+        }
 
         // Αυτόματη εύρεση
         $( document ).on( 'click', '#cc-boxnow-auto-btn', function () {
@@ -183,6 +228,7 @@
             $( '#cc-boxnow-mode-select' ).removeClass( 'cc-visible' );
             $( '#cc-boxnow-selected-info' ).removeClass( 'cc-visible' );
             $( '#cc-boxnow-auto-confirm' ).addClass( 'cc-visible' );
+            clearValidationError();
             syncSession();
         } );
 
@@ -229,6 +275,7 @@
         // Αλλαγή από auto
         $( document ).on( 'click', '#cc-boxnow-auto-change-btn', function () {
             resetBoxNowOptions();
+            clearValidationError();
             syncSession();
         } );
 
