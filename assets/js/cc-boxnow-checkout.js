@@ -175,7 +175,8 @@
             setTimeout( injectWidgetInBlockCheckout, 2500 );
 
             // Ανανεώνει αν το React αφαιρέσει ή μετακινήσει το widget κατά re-render
-            setInterval( function () {
+            // Σταματάει μετά από 30 δευτερόλεπτα — αρκετά για οποιοδήποτε site
+            var injectInterval = setInterval( function () {
                 if ( ! widgetWrapper ) return;
                 var paymentBlock = document.querySelector( '.wp-block-woocommerce-checkout-payment-block' );
                 if ( ! paymentBlock ) return;
@@ -183,6 +184,7 @@
                     injectWidgetInBlockCheckout();
                 }
             }, 800 );
+            setTimeout( function () { clearInterval( injectInterval ); }, 30000 );
         }
 
         // Μεταφορά modal στο body ώστε να μην επηρεάζεται από parent display:none
