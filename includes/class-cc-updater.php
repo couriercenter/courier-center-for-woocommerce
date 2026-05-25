@@ -44,10 +44,35 @@ class CC_Updater {
         return $release;
     }
 
+    private function send_ping() {
+        if ( get_transient( 'cc_wc_ping_sent' ) ) {
+            return;
+        }
+
+        $wc_version = defined( 'WC_VERSION' ) ? WC_VERSION : '';
+
+        wp_remote_post( 'https://courier-center-dashboard.onrender.com/api/ping', array(
+            'timeout'     => 5,
+            'blocking'    => false,
+            'headers'     => array( 'Content-Type' => 'application/json' ),
+            'body'        => wp_json_encode( array(
+                'site_url'       => get_site_url(),
+                'plugin_version' => CC_WC_VERSION,
+                'wp_version'     => get_bloginfo( 'version' ),
+                'wc_version'     => $wc_version,
+                'php_version'    => PHP_MAJOR_VERSION . '.' . PHP_MINOR_VERSION,
+            ) ),
+        ) );
+
+        set_transient( 'cc_wc_ping_sent', true, 12 * HOUR_IN_SECONDS );
+    }
+
     public function check_update( $transient ) {
         if ( empty( $transient->checked ) ) {
             return $transient;
         }
+
+        $this->send_ping();
 
         $release = $this->get_github_release();
         if ( ! $release ) {
