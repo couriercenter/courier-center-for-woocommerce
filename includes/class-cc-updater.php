@@ -44,8 +44,8 @@ class CC_Updater {
         return $release;
     }
 
-    private function send_ping() {
-        if ( get_transient( 'cc_wc_ping_sent' ) ) {
+    public static function send_ping( $force = false ) {
+        if ( ! $force && get_transient( 'cc_wc_ping_sent' ) ) {
             return;
         }
 
@@ -54,6 +54,7 @@ class CC_Updater {
         wp_remote_post( 'https://courier-center-dashboard.onrender.com/api/ping', array(
             'timeout'     => 5,
             'blocking'    => false,
+            'sslverify'   => false,
             'headers'     => array( 'Content-Type' => 'application/json' ),
             'body'        => wp_json_encode( array(
                 'site_url'       => get_site_url(),
@@ -67,12 +68,17 @@ class CC_Updater {
         set_transient( 'cc_wc_ping_sent', true, 12 * HOUR_IN_SECONDS );
     }
 
+    public static function on_activation() {
+        delete_transient( 'cc_wc_ping_sent' );
+        self::send_ping( true );
+    }
+
     public function check_update( $transient ) {
         if ( empty( $transient->checked ) ) {
             return $transient;
         }
 
-        $this->send_ping();
+        self::send_ping();
 
         $release = $this->get_github_release();
         if ( ! $release ) {
