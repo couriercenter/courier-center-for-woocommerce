@@ -371,8 +371,8 @@ class CC_Bulk_Actions {
         $awbs        = $data['awbs'] ?? array();
         $boxnow_awbs = $data['boxnow_awbs'] ?? array();
 
-        // Determine which AWBs to print and which template
-        $print_awbs = ! empty( $awbs ) ? $awbs : $boxnow_awbs;
+        // Merge all AWBs — BoxNow AWBs were previously ignored when regular AWBs existed
+        $print_awbs      = array_merge( $awbs, $boxnow_awbs );
         $is_boxnow_batch = empty( $awbs ) && ! empty( $boxnow_awbs );
         $template = $data['template'] ?? (
             $is_boxnow_batch
@@ -447,7 +447,9 @@ class CC_Bulk_Actions {
             $check = $builder->validate_order();
             if ( is_wp_error( $check ) ) { $failed++; $errors[] = "#$order_id: " . $check->get_error_message(); continue; }
 
-            $payload = $builder->build_payload( 'next_day', false );
+            $is_boxnow_order = ! empty( $order->get_meta( '_boxnow_locker_id' ) )
+                               || $order->get_meta( '_boxnow_delivery_mode' ) === 'auto';
+            $payload = $builder->build_payload( 'next_day', $is_boxnow_order );
             $result  = $api->create_shipment( $payload );
 
             if ( is_wp_error( $result ) ) {
@@ -472,7 +474,7 @@ class CC_Bulk_Actions {
             $order->update_meta_data( '_cc_voucher_number', $voucher_number );
             $order->update_meta_data( '_cc_tracking_number', $tracking_number );
             $order->update_meta_data( '_cc_service_type', 'next_day' );
-            $order->update_meta_data( '_cc_boxnow', '0' );
+            $order->update_meta_data( '_cc_boxnow', $is_boxnow_order ? '1' : '0' );
             $order->update_meta_data( '_cc_created_at', current_time( 'mysql' ) );
             $order->save();
 
@@ -594,8 +596,8 @@ class CC_Bulk_Actions {
             echo '<p><a href="' . esc_url( $result['print_url'] ) . '" target="_blank" class="button button-primary">📄 Άνοιγμα PDF για εκτύπωση</a></p>';
             echo '</div>';
 
-            // Auto-open in new tab via JS
-            echo '<script>window.open("' . esc_url( $result['print_url'] ) . '", "_blank");</script>';
+            // Auto-open in new tab via JS — use esc_url_raw so & is not encoded as &amp; inside the script tag
+            echo '<script>window.open(' . wp_json_encode( esc_url_raw( $result['print_url'] ) ) . ', "_blank");</script>';
             return;
         }
 
