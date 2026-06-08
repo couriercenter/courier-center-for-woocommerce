@@ -14,6 +14,9 @@ class CC_Order_Meta_Box {
         add_action( 'add_meta_boxes_shop_order', array( $this, 'add_meta_box_legacy' ) );
         add_action( 'add_meta_boxes_woocommerce_page_wc-orders', array( $this, 'add_meta_box_hpos' ) );
 
+        // Αυτόματη δημιουργία voucher όταν η παραγγελία περάσει στο επιλεγμένο status
+        add_action( 'woocommerce_order_status_changed', array( $this, 'maybe_auto_create_voucher_on_status_change' ), 20, 4 );
+
         // AJAX handlers
         add_action( 'wp_ajax_cc_create_voucher', array( $this, 'ajax_create_voucher' ) );
         add_action( 'wp_ajax_cc_void_shipment', array( $this, 'ajax_void_shipment' ) );
@@ -814,6 +817,109 @@ class CC_Order_Meta_Box {
             'message'         => 'Voucher δημιουργήθηκε: ' . $voucher_number,
             'voucher_number'  => $voucher_number,
             'tracking_number' => $tracking_number,
+        ) );
+    }
+
+    /**
+     * Αυτόματη δημιουργία voucher (Επόμενη Μέρα) όταν μια παραγγελία περάσει
+     * στην κατάσταση που έχει επιλέξει ο χρήστης στις Ρυθμίσεις
+     * ("🤖 Αυτόματη Δημιουργία Voucher" → Ενεργοποίηση + Κατάσταση).
+     *
+     * Hooked στο woocommerce_order_status_changed( $order_id, $old_status, $new_status, $order ).
+     */
+    public function maybe_auto_create_voucher_on_status_change( $order_id, $old_status, $new_status, $order ) {
+        if ( get_option( 'cc_wc_auto_create_enabled', '0' ) !== '1' ) {
+            return;
+        }
+
+        $trigger_status = get_option( 'cc_wc_auto_create_status', '' );
+        if ( empty( $trigger_status ) || $new_status !== $trigger_status ) {
+            return;
+        }
+
+        if ( ! ( $order instanceof WC_Order ) ) {
+            $order = wc_get_order( $order_id );
+        }
+        if ( ! $order ) {
+            return;
+        }
+
+        // Μην ξαναδημιουργήσεις αν υπάρχει ήδη ενεργό (μη ακυρωμένο) voucher
+        $existing_voucher = $order->get_meta( '_cc_voucher_number' );
+        $is_voided        = $order->get_meta( '_cc_voided' ) === '1';
+        if ( $existing_voucher && ! $is_voided ) {
+            return;
+        }
+
+        $boxnow = ! empty( $order->get_meta( '_boxnow_locker_id' ) )
+                  || $order->get_meta( '_boxnow_delivery_mode' ) === 'auto';
+
+        // BOX NOW δεν υποστηρίζει αντικαταβολή — μην προσπαθήσεις αυτόματη δημιουργία σε αυτή την περίπτωση
+        if ( $boxnow && $order->get_payment_method() === 'cod' ) {
+            $order->add_order_note( '⚠️ Αυτόματη δημιουργία voucher παραλείφθηκε: το BOX NOW δεν υποστηρίζει αντικαταβολή (COD).' );
+            return;
+        }
+
+        $service_type  = 'next_day';
+        $return_option = 'none';
+
+        $builder = new CC_Shipment_Builder( $order, array(), 1 );
+
+        // Σιωπηλή παράλειψη σε προβλήματα ρυθμίσεων/στοιχείων παραγγελίας —
+        // δεν θέλουμε να εμφανίσουμε σφάλμα κατά την αλλαγή status, απλώς να μην δημιουργηθεί το voucher.
+        if ( is_wp_error( $builder->validate_settings() ) || is_wp_error( $builder->validate_order() ) ) {
+            return;
+        }
+
+        $payload = $builder->build_payload( $service_type, $boxnow, $return_option );
+
+        $api    = new CC_API();
+        $result = $api->create_shipment( $payload );
+
+        if ( is_wp_error( $result ) ) {
+            $order->add_order_note( '❌ Αυτόματη δημιουργία voucher απέτυχε: ' . $result->get_error_message() );
+            return;
+        }
+
+        $voucher_number  = $result['ShipmentNumber'] ?? '';
+        $tracking_number = isset( $result['TrackingNumbers'][0] ) ? $result['TrackingNumbers'][0] : $voucher_number;
+
+        if ( empty( $voucher_number ) ) {
+            $api_message = $result['Errors'][0]['Message']
+                ?? $result['ErrorMessage']
+                ?? $result['Message']
+                ?? 'Το API δεν επέστρεψε ShipmentNumber';
+            $order->add_order_note( '❌ Αυτόματη δημιουργία voucher απέτυχε: ' . $api_message );
+            return;
+        }
+
+        // Καθάρισμα παλιών δεδομένων ακύρωσης αν ξαναδημιουργείται μετά από void
+        if ( $is_voided ) {
+            $order->delete_meta_data( '_cc_voided' );
+            $order->delete_meta_data( '_cc_voided_at' );
+            $order->delete_meta_data( '_cc_shipment_status' );
+            $order->delete_meta_data( '_cc_shipment_status_desc' );
+            $order->delete_meta_data( '_cc_shipment_action_code' );
+            $order->delete_meta_data( '_cc_status_updated_at' );
+        }
+
+        $order->update_meta_data( '_cc_voucher_number', $voucher_number );
+        $order->update_meta_data( '_cc_tracking_number', $tracking_number );
+        $order->update_meta_data( '_cc_service_type', $service_type );
+        $order->update_meta_data( '_cc_boxnow', $boxnow ? '1' : '0' );
+        $order->update_meta_data( '_cc_return_option', $return_option );
+        $order->update_meta_data( '_cc_created_at', current_time( 'mysql' ) );
+        $order->save();
+
+        $status_label = function_exists( 'wc_get_order_status_name' )
+            ? wc_get_order_status_name( $new_status )
+            : $new_status;
+
+        $order->add_order_note( sprintf(
+            '🤖 Αυτόματη δημιουργία voucher (κατάσταση → %s): %s | Υπηρεσία: Επόμενη Μέρα%s',
+            $status_label,
+            $voucher_number,
+            $boxnow ? ' + BOX NOW' : ''
         ) );
     }
 

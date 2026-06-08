@@ -269,6 +269,42 @@ class CC_Settings {
             'cc_wc_boxnow_section',
             array( 'label_for' => 'cc_wc_boxnow_enabled' )
         );
+
+        // ── Auto-create voucher section ───────────────────────────────────────
+        add_settings_section(
+            'cc_wc_auto_create_section',
+            __( '🤖 Αυτόματη Δημιουργία Voucher', 'courier-center-woocommerce' ),
+            array( $this, 'auto_create_section_callback' ),
+            'courier-center'
+        );
+
+        register_setting( 'cc_wc_settings', 'cc_wc_auto_create_enabled', array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '0',
+        ) );
+        add_settings_field(
+            'cc_wc_auto_create_enabled',
+            __( 'Ενεργοποίηση', 'courier-center-woocommerce' ),
+            array( $this, 'auto_create_enabled_field_callback' ),
+            'courier-center',
+            'cc_wc_auto_create_section',
+            array( 'label_for' => 'cc_wc_auto_create_enabled' )
+        );
+
+        register_setting( 'cc_wc_settings', 'cc_wc_auto_create_status', array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '',
+        ) );
+        add_settings_field(
+            'cc_wc_auto_create_status',
+            __( 'Κατάσταση που πυροδοτεί τη δημιουργία', 'courier-center-woocommerce' ),
+            array( $this, 'auto_create_status_field_callback' ),
+            'courier-center',
+            'cc_wc_auto_create_section',
+            array( 'label_for' => 'cc_wc_auto_create_status' )
+        );
     }
 
     /**
@@ -747,6 +783,42 @@ class CC_Settings {
         );
     }
 
+    // ── Auto-create voucher callbacks ─────────────────────────────────────────
+
+    public function auto_create_section_callback() {
+        echo '<p>Δημιουργία voucher αποστολής αυτόματα (Επόμενη Μέρα), μόλις μια παραγγελία περάσει στην παρακάτω επιλεγμένη κατάσταση — χωρίς να χρειάζεται καμία χειροκίνητη ενέργεια. Δεν δημιουργείται διπλό voucher αν υπάρχει ήδη ενεργό για την παραγγελία.</p>';
+    }
+
+    public function auto_create_enabled_field_callback( $args ) {
+        $value = get_option( $args['label_for'], '0' );
+        printf(
+            '<label><input type="checkbox" id="%s" name="%s" value="1" %s> %s</label>',
+            esc_attr( $args['label_for'] ),
+            esc_attr( $args['label_for'] ),
+            checked( $value, '1', false ),
+            esc_html__( 'Αυτόματη δημιουργία voucher όταν μια παραγγελία περάσει στην επιλεγμένη κατάσταση', 'courier-center-woocommerce' )
+        );
+    }
+
+    public function auto_create_status_field_callback( $args ) {
+        $value    = get_option( $args['label_for'], '' );
+        $statuses = function_exists( 'wc_get_order_statuses' ) ? wc_get_order_statuses() : array();
+
+        printf( '<select id="%s" name="%s">', esc_attr( $args['label_for'] ), esc_attr( $args['label_for'] ) );
+        echo '<option value="">— Επιλέξτε κατάσταση —</option>';
+        foreach ( $statuses as $key => $label ) {
+            $slug = preg_replace( '/^wc-/', '', $key );
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr( $slug ),
+                selected( $value, $slug, false ),
+                esc_html( $label )
+            );
+        }
+        echo '</select>';
+        echo '<p class="description">Μόλις μια παραγγελία περάσει σε αυτή την κατάσταση, θα δημιουργείται αυτόματα voucher (Επόμενη Μέρα, με αυτόματο εντοπισμό BOX NOW όπου χρειάζεται).</p>';
+    }
+
     /**
      * AJAX: Διαγραφή όλων των plugin options
      */
@@ -773,6 +845,8 @@ class CC_Settings {
             'cc_wc_print_template',
             'cc_wc_print_template_boxnow',
             'cc_wc_boxnow_enabled',
+            'cc_wc_auto_create_enabled',
+            'cc_wc_auto_create_status',
         );
 
         foreach ( $options as $option ) {
