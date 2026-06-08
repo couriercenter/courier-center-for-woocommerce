@@ -371,8 +371,8 @@ class CC_Bulk_Actions {
         $awbs        = $data['awbs'] ?? array();
         $boxnow_awbs = $data['boxnow_awbs'] ?? array();
 
-        // Merge all AWBs — BoxNow AWBs were previously ignored when regular AWBs existed
-        $print_awbs      = array_merge( $awbs, $boxnow_awbs );
+        // Κανονική εκτύπωση: μόνο regular AWBs — BoxNow εκτυπώνεται ξεχωριστά
+        $print_awbs      = $awbs;
         $is_boxnow_batch = empty( $awbs ) && ! empty( $boxnow_awbs );
         $template = $data['template'] ?? (
             $is_boxnow_batch
