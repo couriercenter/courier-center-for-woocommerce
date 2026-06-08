@@ -248,12 +248,11 @@ class CC_Bulk_Actions {
         }
 
         if ( empty( $awbs ) && empty( $boxnow_awbs ) ) {
-            set_transient( 'cc_bulk_result_' . get_current_user_id(), array(
+            return $this->redirect_with_result( $redirect_to, array(
                 'type' => 'print', 'success' => 0, 'failed' => 0,
                 'skipped' => $skipped, 'errors' => array( 'Δεν βρέθηκαν ενεργά vouchers' ),
                 'total' => count( $order_ids ),
-            ), 60 );
-            return add_query_arg( 'cc_bulk_done', '1', $redirect_to );
+            ) );
         }
 
         // Store AWBs in transient for the print handler
@@ -270,7 +269,7 @@ class CC_Bulk_Actions {
         );
 
         // Store the print URL so we can show it in the notice
-        set_transient( 'cc_bulk_result_' . get_current_user_id(), array(
+        return $this->redirect_with_result( $redirect_to, array(
             'type'      => 'print',
             'success'   => count( $awbs ) + count( $boxnow_awbs ),
             'failed'    => 0,
@@ -278,9 +277,7 @@ class CC_Bulk_Actions {
             'errors'    => array(),
             'total'     => count( $order_ids ),
             'print_url' => $print_url,
-        ), 60 );
-
-        return add_query_arg( 'cc_bulk_done', '1', $redirect_to );
+        ) );
     }
 
     /**
@@ -311,15 +308,14 @@ class CC_Bulk_Actions {
         }
 
         if ( empty( $awbs ) ) {
-            set_transient( 'cc_bulk_result_' . get_current_user_id(), array(
+            return $this->redirect_with_result( $redirect_to, array(
                 'type'    => 'print',
                 'success' => 0,
                 'failed'  => 0,
                 'skipped' => $skipped,
                 'errors'  => array( 'Καμία από τις επιλεγμένες παραγγελίες δεν είναι BOX NOW' ),
                 'total'   => count( $order_ids ),
-            ), 60 );
-            return add_query_arg( 'cc_bulk_done', '1', $redirect_to );
+            ) );
         }
 
         $print_key = 'cc_mass_print_boxnow_' . get_current_user_id() . '_' . time();
@@ -334,7 +330,7 @@ class CC_Bulk_Actions {
             'cc_mass_print'
         );
 
-        set_transient( 'cc_bulk_result_' . get_current_user_id(), array(
+        return $this->redirect_with_result( $redirect_to, array(
             'type'      => 'print',
             'success'   => count( $awbs ),
             'failed'    => 0,
@@ -342,9 +338,7 @@ class CC_Bulk_Actions {
             'errors'    => array(),
             'total'     => count( $order_ids ),
             'print_url' => $print_url,
-        ), 60 );
-
-        return add_query_arg( 'cc_bulk_done', '1', $redirect_to );
+        ) );
     }
 
     /**
@@ -487,11 +481,10 @@ class CC_Bulk_Actions {
             usleep( 100000 ); // 100ms αντί 300ms για αποφυγή timeout
         }
 
-        set_transient( 'cc_bulk_result_' . get_current_user_id(), array(
+        return $this->redirect_with_result( $redirect_to, array(
             'type' => 'create', 'success' => $success, 'failed' => $failed,
             'skipped' => $skipped, 'errors' => $errors, 'total' => count( $order_ids ),
-        ), 60 );
-        return add_query_arg( 'cc_bulk_done', '1', $redirect_to );
+        ) );
     }
 
     // =========================================================================
@@ -566,11 +559,66 @@ class CC_Bulk_Actions {
             usleep( 500000 );
         }
 
-        set_transient( 'cc_bulk_result_' . get_current_user_id(), array(
+        return $this->redirect_with_result( $redirect_to, array(
             'type' => 'status', 'success' => $updated, 'failed' => $failed,
             'skipped' => $skipped, 'errors' => $errors, 'total' => count( $order_ids ),
-        ), 60 );
-        return add_query_arg( 'cc_bulk_done', '1', $redirect_to );
+        ) );
+    }
+
+    // =========================================================================
+    // RESULT PASSING (URL-encoded — ανεξάρτητο από object cache / transients)
+    // =========================================================================
+
+    /**
+     * Αποθηκεύει τα αποτελέσματα ενός bulk action και επιστρέφει το redirect URL.
+     *
+     * Σε sites με persistent object cache (π.χ. SiteGround Optimizer + Memcached/Redis,
+     * "Dynamic Caching") το set_transient() μπορεί να μην είναι ορατό ακόμα στο request
+     * που ακολουθεί το redirect — με αποτέλεσμα το notice να μην εμφανίζεται ΚΑΘΟΛΟΥ.
+     *
+     * Για να είμαστε ανεξάρτητοι από αυτό, κωδικοποιούμε τα αποτελέσματα απευθείας
+     * μέσα στο URL του redirect (base64 url-safe). Κρατάμε ΚΑΙ το transient ως
+     * fallback (π.χ. αν κάποιο plugin/proxy αφαιρέσει το query param).
+     */
+    private function redirect_with_result( $redirect_to, array $result_data ) {
+        set_transient( 'cc_bulk_result_' . get_current_user_id(), $result_data, 60 );
+
+        return add_query_arg(
+            array(
+                'cc_bulk_done' => '1',
+                'cc_bulk_r'    => $this->encode_bulk_result( $result_data ),
+            ),
+            $redirect_to
+        );
+    }
+
+    /**
+     * Κωδικοποιεί ένα array αποτελεσμάτων σε url-safe base64 string.
+     * Περιορίζει τα errors σε 15 ώστε να μη "φουσκώνει" υπερβολικά το URL.
+     */
+    private function encode_bulk_result( array $data ) {
+        if ( ! empty( $data['errors'] ) && is_array( $data['errors'] ) && count( $data['errors'] ) > 15 ) {
+            $total_errors     = count( $data['errors'] );
+            $data['errors']   = array_slice( $data['errors'], 0, 15 );
+            $data['errors'][] = sprintf( '… και %d ακόμα σφάλματα', $total_errors - 15 );
+        }
+
+        $json = wp_json_encode( $data );
+        if ( false === $json ) { return ''; }
+
+        return strtr( base64_encode( $json ), '+/', '-_' );
+    }
+
+    /**
+     * Αποκωδικοποιεί το string που παράχθηκε από encode_bulk_result().
+     */
+    private function decode_bulk_result( $encoded ) {
+        $b64  = strtr( (string) $encoded, '-_', '+/' );
+        $json = base64_decode( $b64, true );
+        if ( false === $json ) { return null; }
+
+        $data = json_decode( $json, true );
+        return is_array( $data ) ? $data : null;
     }
 
     // =========================================================================
@@ -580,7 +628,19 @@ class CC_Bulk_Actions {
     public function show_bulk_result_notice() {
         if ( ! isset( $_GET['cc_bulk_done'] ) ) { return; }
 
-        $result = get_transient( 'cc_bulk_result_' . get_current_user_id() );
+        $result = null;
+
+        // Πρωτεύουσα πηγή: δεδομένα κωδικοποιημένα μέσα στο ίδιο το URL —
+        // λειτουργεί πάντα, ανεξάρτητα από caching/object cache του site.
+        if ( isset( $_GET['cc_bulk_r'] ) ) {
+            $result = $this->decode_bulk_result( wp_unslash( $_GET['cc_bulk_r'] ) );
+        }
+
+        // Fallback: transient (καλύπτει edge cases όπου το query param αφαιρέθηκε)
+        if ( ! $result ) {
+            $result = get_transient( 'cc_bulk_result_' . get_current_user_id() );
+        }
+
         if ( ! $result ) { return; }
         delete_transient( 'cc_bulk_result_' . get_current_user_id() );
 
