@@ -596,8 +596,9 @@ class CC_Bulk_Actions {
             echo '<p><a href="' . esc_url( $result['print_url'] ) . '" target="_blank" class="button button-primary">📄 Άνοιγμα PDF για εκτύπωση</a></p>';
             echo '</div>';
 
-            // Auto-open in new tab via JS — use esc_url_raw so & is not encoded as &amp; inside the script tag
-            echo '<script>window.open(' . wp_json_encode( esc_url_raw( $result['print_url'] ) ) . ', "_blank");</script>';
+            // Auto-open in new tab via JS — decode HTML entities (&amp; → &) so the URL is valid inside a JS string
+            $js_url = html_entity_decode( $result['print_url'], ENT_QUOTES, 'UTF-8' );
+            echo '<script>window.open(' . wp_json_encode( $js_url ) . ', "_blank");</script>';
             return;
         }
 
