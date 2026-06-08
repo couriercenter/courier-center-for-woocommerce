@@ -31,6 +31,8 @@ class CC_Bug_Report {
         $site_url       = get_site_url();
         $wc_version     = defined( 'WC_VERSION' ) ? WC_VERSION : 'N/A';
         $php_version    = PHP_VERSION;
+        $current_user   = wp_get_current_user();
+        $user_email     = $current_user->user_email;
         ?>
         <div class="wrap">
             <h1>🐛 Αναφορά Προβλήματος</h1>
@@ -63,6 +65,15 @@ class CC_Bug_Report {
                                 <option value="medium" selected>🟡 Μεσαία — Επηρεάζει λειτουργία</option>
                                 <option value="critical">🔴 Κρίσιμη — Δεν λειτουργεί καθόλου</option>
                             </select>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th>Email Επικοινωνίας <span style="color:red;">*</span></th>
+                        <td>
+                            <input type="email" id="cc-bug-email" class="regular-text" style="width:100%;"
+                                   value="<?php echo esc_attr( $user_email ); ?>"
+                                   placeholder="email@example.com" />
+                            <p class="description">Θα χρησιμοποιηθεί από την ομάδα του Courier Center για να επικοινωνήσει μαζί σας σχετικά με την αναφορά.</p>
                         </td>
                     </tr>
                 </table>
@@ -112,6 +123,7 @@ class CC_Bug_Report {
                 var title       = $('#cc-bug-title').val().trim();
                 var description = $('#cc-bug-description').val().trim();
                 var severity    = $('#cc-bug-severity').val();
+                var email       = $('#cc-bug-email').val().trim();
 
                 if ( ! title ) {
                     showResult('error', '❌ Παρακαλώ συμπληρώστε τον τίτλο του προβλήματος.');
@@ -121,6 +133,11 @@ class CC_Bug_Report {
                 if ( ! description ) {
                     showResult('error', '❌ Παρακαλώ συμπληρώστε την περιγραφή του προβλήματος.');
                     $('#cc-bug-description').focus();
+                    return;
+                }
+                if ( ! email || ! /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test( email ) ) {
+                    showResult('error', '❌ Παρακαλώ συμπληρώστε ένα έγκυρο email επικοινωνίας.');
+                    $('#cc-bug-email').focus();
                     return;
                 }
 
@@ -136,10 +153,11 @@ class CC_Bug_Report {
                         title:       title,
                         description: description,
                         severity:    severity,
+                        email:       email,
                     },
                     success: function(response) {
                         if ( response.success ) {
-                            showResult('success', '✅ Η αναφορά στάλθηκε επιτυχώς! Η ομάδα του Courier Center θα επικοινωνήσει μαζί σας.');
+                            showResult('success', '✅ Η αναφορά στάλθηκε επιτυχώς! Η ομάδα του Courier Center θα επικοινωνήσει μαζί σας στο email που δηλώσατε.');
                             $('#cc-bug-title').val('');
                             $('#cc-bug-description').val('');
                             $('#cc-bug-severity').val('medium');
@@ -188,9 +206,14 @@ class CC_Bug_Report {
         $title       = sanitize_text_field( $_POST['title'] ?? '' );
         $description = sanitize_textarea_field( $_POST['description'] ?? '' );
         $severity    = sanitize_text_field( $_POST['severity'] ?? 'low' );
+        $email       = sanitize_email( $_POST['email'] ?? '' );
 
-        if ( empty( $title ) || empty( $description ) ) {
+        if ( empty( $title ) || empty( $description ) || empty( $email ) ) {
             wp_send_json_error( array( 'message' => 'Παρακαλώ συμπληρώστε όλα τα υποχρεωτικά πεδία' ) );
+        }
+
+        if ( ! is_email( $email ) ) {
+            wp_send_json_error( array( 'message' => 'Παρακαλώ συμπληρώστε ένα έγκυρο email επικοινωνίας' ) );
         }
 
         if ( ! in_array( $severity, array( 'low', 'medium', 'critical' ), true ) ) {
@@ -208,6 +231,7 @@ class CC_Bug_Report {
             'title'          => $title,
             'description'    => $description,
             'severity'       => $severity,
+            'reporter_email' => $email,
         );
 
         $response = wp_remote_post(
