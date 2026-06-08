@@ -430,6 +430,10 @@ class CC_Bulk_Actions {
     private function bulk_create_vouchers( $redirect_to, $order_ids ) {
         if ( empty( $order_ids ) ) { return $redirect_to; }
 
+        // Επέκταση χρόνου εκτέλεσης για μαζικές δημιουργίες (αποφυγή 504)
+        @set_time_limit( 300 );
+        ignore_user_abort( true );
+
         $success = 0; $failed = 0; $skipped = 0; $errors = array();
         $api = new CC_API();
 
@@ -480,7 +484,7 @@ class CC_Bulk_Actions {
 
             $order->add_order_note( '✅ CC voucher (Bulk): ' . $voucher_number . ' | Επόμενη Μέρα' );
             $success++;
-            usleep( 300000 );
+            usleep( 100000 ); // 100ms αντί 300ms για αποφυγή timeout
         }
 
         set_transient( 'cc_bulk_result_' . get_current_user_id(), array(
@@ -496,6 +500,9 @@ class CC_Bulk_Actions {
 
     private function bulk_update_statuses( $redirect_to, $order_ids ) {
         if ( empty( $order_ids ) ) { return $redirect_to; }
+
+        @set_time_limit( 300 );
+        ignore_user_abort( true );
 
         $updated = 0; $skipped = 0; $failed = 0; $errors = array();
         $api = new CC_API();
