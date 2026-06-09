@@ -255,18 +255,18 @@ class CC_Bulk_Actions {
             ) );
         }
 
-        // Store AWBs in transient for the print handler
-        $print_key = 'cc_mass_print_' . get_current_user_id() . '_' . time();
-        set_transient( $print_key, array(
+        // Store AWBs in transient (fallback για μεγάλα batches / sites χωρίς cache lag)
+        $print_key  = 'cc_mass_print_' . get_current_user_id() . '_' . time();
+        $print_data = array(
             'awbs'        => $awbs,
             'boxnow_awbs' => $boxnow_awbs,
-        ), 300 ); // 5 minutes expiry
-
-        // Redirect to print handler in new tab via JS
-        $print_url = wp_nonce_url(
-            admin_url( 'admin-post.php?action=cc_mass_print_vouchers&print_key=' . urlencode( $print_key ) ),
-            'cc_mass_print'
         );
+        set_transient( $print_key, $print_data, 300 ); // 5 minutes expiry
+
+        // Τα δεδομένα περνάνε ΚΑΙ κωδικοποιημένα μέσα στο URL (base64) ώστε να
+        // δουλεύει ακόμα κι αν persistent object cache (SiteGround Optimizer κ.λπ.)
+        // καθυστερήσει να κάνει replicate το transient στο νέο request/tab.
+        $print_url = $this->build_print_url( 'cc_mass_print_vouchers', $print_key, $print_data );
 
         // Store the print URL so we can show it in the notice
         return $this->redirect_with_result( $redirect_to, array(
@@ -318,17 +318,15 @@ class CC_Bulk_Actions {
             ) );
         }
 
-        $print_key = 'cc_mass_print_boxnow_' . get_current_user_id() . '_' . time();
-        set_transient( $print_key, array(
+        $print_key  = 'cc_mass_print_boxnow_' . get_current_user_id() . '_' . time();
+        $print_data = array(
             'awbs'        => $awbs,
             'boxnow_awbs' => array(),
             'template'    => get_option( 'cc_wc_print_template_boxnow', 'singlepdf_100x150_4up' ),
-        ), 300 );
-
-        $print_url = wp_nonce_url(
-            admin_url( 'admin-post.php?action=cc_mass_print_boxnow_vouchers&print_key=' . urlencode( $print_key ) ),
-            'cc_mass_print'
         );
+        set_transient( $print_key, $print_data, 300 );
+
+        $print_url = $this->build_print_url( 'cc_mass_print_boxnow_vouchers', $print_key, $print_data );
 
         return $this->redirect_with_result( $redirect_to, array(
             'type'      => 'print',
@@ -354,7 +352,14 @@ class CC_Bulk_Actions {
         }
 
         $print_key = isset( $_GET['print_key'] ) ? sanitize_text_field( $_GET['print_key'] ) : '';
-        $data = get_transient( $print_key );
+        $data      = get_transient( $print_key );
+
+        // Fallback: αν το transient δεν είναι ορατό ακόμα λόγω persistent object cache lag
+        // (π.χ. SiteGround Optimizer), διάβασε τα δεδομένα από το URL — ίδιος μηχανισμός
+        // με το cc_bulk_r στο result notice.
+        if ( ! $data && isset( $_GET['cc_pd'] ) ) {
+            $data = $this->decode_bulk_result( wp_unslash( $_GET['cc_pd'] ) );
+        }
 
         if ( ! $data ) {
             wp_die( 'Τα δεδομένα εκτύπωσης έληξαν. Δοκιμάστε ξανά.' );
@@ -568,6 +573,27 @@ class CC_Bulk_Actions {
     // =========================================================================
     // RESULT PASSING (URL-encoded — ανεξάρτητο από object cache / transients)
     // =========================================================================
+
+    /**
+     * Φτιάχνει το URL για τον print handler, περνώντας τα AWBs ΚΑΙ κωδικοποιημένα
+     * μέσα στο URL (base64 url-safe) — ώστε να δουλεύει ακόμα κι αν persistent
+     * object cache καθυστερήσει να κάνει replicate το transient στο νέο request/tab.
+     * Για πολύ μεγάλα batches (encoded > 6000 chars) παραλείπει το cc_pd και
+     * βασίζεται μόνο στο transient (αποφυγή 414 Request-URI Too Large).
+     */
+    private function build_print_url( $action, $print_key, array $print_data ) {
+        $args = array(
+            'action'    => $action,
+            'print_key' => $print_key,
+        );
+
+        $encoded = $this->encode_bulk_result( $print_data );
+        if ( $encoded && strlen( $encoded ) < 6000 ) {
+            $args['cc_pd'] = $encoded;
+        }
+
+        return wp_nonce_url( add_query_arg( $args, admin_url( 'admin-post.php' ) ), 'cc_mass_print' );
+    }
 
     /**
      * Αποθηκεύει τα αποτελέσματα ενός bulk action και επιστρέφει το redirect URL.
