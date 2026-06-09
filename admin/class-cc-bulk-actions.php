@@ -670,12 +670,12 @@ class CC_Bulk_Actions {
         if ( ! $result ) { return; }
         delete_transient( 'cc_bulk_result_' . get_current_user_id() );
 
-        $type    = $result['type'] ?? 'create';
-        $success = $result['success'];
-        $failed  = $result['failed'];
-        $skipped = $result['skipped'];
-        $errors  = $result['errors'];
-        $total   = $result['total'];
+        $type    = $result['type']    ?? 'create';
+        $success = $result['success'] ?? 0;
+        $failed  = $result['failed']  ?? 0;
+        $skipped = $result['skipped'] ?? 0;
+        $errors  = $result['errors']  ?? array();
+        $total   = $result['total']   ?? 0;
 
         // Special handling for print action - show link to open PDF
         if ( $type === 'print' && ! empty( $result['print_url'] ) ) {

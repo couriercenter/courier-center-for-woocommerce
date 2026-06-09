@@ -865,9 +865,15 @@ class CC_Order_Meta_Box {
 
         $builder = new CC_Shipment_Builder( $order, array(), 1 );
 
-        // Σιωπηλή παράλειψη σε προβλήματα ρυθμίσεων/στοιχείων παραγγελίας —
-        // δεν θέλουμε να εμφανίσουμε σφάλμα κατά την αλλαγή status, απλώς να μην δημιουργηθεί το voucher.
-        if ( is_wp_error( $builder->validate_settings() ) || is_wp_error( $builder->validate_order() ) ) {
+        $settings_check = $builder->validate_settings();
+        if ( is_wp_error( $settings_check ) ) {
+            $order->add_order_note( '⚠️ Αυτόματη δημιουργία voucher παραλείφθηκε: ' . $settings_check->get_error_message() );
+            return;
+        }
+
+        $order_check = $builder->validate_order();
+        if ( is_wp_error( $order_check ) ) {
+            $order->add_order_note( '⚠️ Αυτόματη δημιουργία voucher παραλείφθηκε: ' . $order_check->get_error_message() );
             return;
         }
 
