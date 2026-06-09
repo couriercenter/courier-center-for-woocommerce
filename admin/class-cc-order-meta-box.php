@@ -731,10 +731,6 @@ class CC_Order_Meta_Box {
             }
         }
 
-        if ( $boxnow ) {
-            error_log( 'CC BOXNOW RESPONSE: ' . wp_json_encode( $result, JSON_UNESCAPED_UNICODE ) );
-        }
-
         $boxnow_fallback      = false;
         $assigned_locker_code = '';
 

@@ -87,7 +87,6 @@ class CC_API {
      * @return array|WP_Error
      */
     public function create_shipment( $payload ) {
-        error_log( 'CC PAYLOAD: ' . wp_json_encode( $payload, JSON_UNESCAPED_UNICODE ) );
         try {
             $response = $this->request( 'POST', '/Shipment', $payload );
 
@@ -165,8 +164,6 @@ class CC_API {
         // Το API μπορεί να επιστρέψει είτε raw PDF bytes, είτε JSON με base64
         // Έλεγξε αν είναι PDF (αρχίζει με %PDF)
         if ( substr( $body, 0, 4 ) === '%PDF' ) {
-            // DEBUG - θα το αφαιρέσουμε
-            error_log( 'CC PRINT DEBUG - Template: ' . $template . ' | AWBs: ' . $awb_string . ' | Response content-type: ' . wp_remote_retrieve_header( $response, 'content-type' ) );
             return $body;
         }
 
