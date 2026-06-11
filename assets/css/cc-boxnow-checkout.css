@@ -15,6 +15,11 @@
 #cc-boxnow-auto-confirm.cc-visible,
 #cc-boxnow-selected-info.cc-visible    { display: flex !important; }
 
+/* Hidden until the selected shipping method matches "Courier Center" */
+.cc-boxnow-shipping-hidden {
+    display: none !important;
+}
+
 /* ─────────────────────────────────────────
    Checkout table row reset
 ───────────────────────────────────────── */

@@ -270,6 +270,20 @@ class CC_Settings {
             array( 'label_for' => 'cc_wc_boxnow_enabled' )
         );
 
+        register_setting( 'cc_wc_settings', 'cc_wc_boxnow_shipping_methods', array(
+            'type'              => 'array',
+            'sanitize_callback' => array( $this, 'sanitize_boxnow_shipping_methods' ),
+            'default'           => array(),
+        ) );
+        add_settings_field(
+            'cc_wc_boxnow_shipping_methods',
+            __( 'Μέθοδος αποστολής "Courier Center"', 'courier-center-woocommerce' ),
+            array( $this, 'boxnow_shipping_methods_field_callback' ),
+            'courier-center',
+            'cc_wc_boxnow_section',
+            array( 'label_for' => 'cc_wc_boxnow_shipping_methods' )
+        );
+
         // ── Auto-create voucher section ───────────────────────────────────────
         add_settings_section(
             'cc_wc_auto_create_section',
@@ -770,6 +784,15 @@ class CC_Settings {
 
     public function boxnow_section_callback() {
         echo '<p>Ρυθμίσεις για το BOX NOW Locker addon στο checkout.</p>';
+
+        $enabled = get_option( 'cc_wc_boxnow_enabled', '0' );
+        $methods = get_option( 'cc_wc_boxnow_shipping_methods', array() );
+
+        if ( $enabled === '1' && empty( $methods ) ) {
+            echo '<div class="notice notice-warning inline"><p>';
+            esc_html_e( 'Το BOX NOW είναι ενεργό αλλά δεν έχει οριστεί ποια μέθοδος αποστολής αντιστοιχεί στο "Courier Center" παρακάτω. Μέχρι να το ρυθμίσετε, το widget BOX NOW δεν θα εμφανίζεται στο checkout.', 'courier-center-woocommerce' );
+            echo '</p></div>';
+        }
     }
 
     public function boxnow_enabled_field_callback( $args ) {
@@ -781,6 +804,60 @@ class CC_Settings {
             checked( $value, '1', false ),
             esc_html__( 'Εμφάνιση επιλογής BOX NOW Locker στο checkout (κάτω από τα shipping methods)', 'courier-center-woocommerce' )
         );
+    }
+
+    /**
+     * Sanitize: array of shipping method instance IDs
+     */
+    public function sanitize_boxnow_shipping_methods( $value ) {
+        if ( ! is_array( $value ) ) {
+            return array();
+        }
+        return array_map( 'absint', $value );
+    }
+
+    /**
+     * Checkbox list: ποιες shipping methods (από όλες τις zones) αντιστοιχούν στο "Courier Center"
+     */
+    public function boxnow_shipping_methods_field_callback( $args ) {
+        $selected = array_map( 'absint', (array) get_option( $args['label_for'], array() ) );
+
+        $zones   = \WC_Shipping_Zones::get_zones();
+        $zones[] = array(
+            'zone_id'   => 0,
+            'zone_name' => __( 'Υπόλοιπος Κόσμος', 'courier-center-woocommerce' ),
+        );
+
+        $found_any = false;
+
+        foreach ( $zones as $zone_data ) {
+            $zone    = new \WC_Shipping_Zone( $zone_data['zone_id'] );
+            $methods = $zone->get_shipping_methods();
+
+            if ( empty( $methods ) ) {
+                continue;
+            }
+
+            foreach ( $methods as $method ) {
+                $found_any = true;
+                printf(
+                    '<label style="display:block;margin-bottom:4px;"><input type="checkbox" name="%s[]" value="%d" %s> %s &mdash; <em>%s</em></label>',
+                    esc_attr( $args['label_for'] ),
+                    esc_attr( $method->instance_id ),
+                    checked( in_array( $method->instance_id, $selected, true ), true, false ),
+                    esc_html( $method->get_title() ),
+                    esc_html( $zone_data['zone_name'] )
+                );
+            }
+        }
+
+        if ( ! $found_any ) {
+            echo '<p class="description">' . esc_html__( 'Δεν βρέθηκαν shipping methods. Ρυθμίστε πρώτα τις ζώνες αποστολής στο WooCommerce.', 'courier-center-woocommerce' ) . '</p>';
+        }
+
+        echo '<p class="description">';
+        esc_html_e( 'Επιλέξτε ποια μέθοδο/μεθόδους αποστολής αντιστοιχούν στο "Courier Center". Το widget BOX NOW θα εμφανίζεται στο checkout μόνο όταν ο πελάτης επιλέξει μία από αυτές.', 'courier-center-woocommerce' );
+        echo '</p>';
     }
 
     // ── Auto-create voucher callbacks ─────────────────────────────────────────
@@ -845,6 +922,7 @@ class CC_Settings {
             'cc_wc_print_template',
             'cc_wc_print_template_boxnow',
             'cc_wc_boxnow_enabled',
+            'cc_wc_boxnow_shipping_methods',
             'cc_wc_auto_create_enabled',
             'cc_wc_auto_create_status',
         );

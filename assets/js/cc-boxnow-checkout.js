@@ -3,6 +3,9 @@
 
     var partnerId       = ( typeof ccBoxNow !== 'undefined' && ccBoxNow.partnerId )       ? ccBoxNow.partnerId       : 0;
     var isBlockCheckout = ( typeof ccBoxNow !== 'undefined' && ccBoxNow.isBlockCheckout === '1' );
+    var allowedShippingIds = ( typeof ccBoxNow !== 'undefined' && Array.isArray( ccBoxNow.allowedShippingInstanceIds ) )
+        ? ccBoxNow.allowedShippingInstanceIds
+        : [];
     var sdkLoaded       = false;
     var mapInited       = false;
     var widgetWrapper   = null; // saved reference for block checkout re-injection
@@ -143,6 +146,61 @@
         $( '#cc-boxnow-sdk-error' ).remove();
     }
 
+    // ─── Show BOX NOW only when the selected shipping method is "Courier Center" ───
+
+    // Εξάγει το instance_id από rate id τύπου "flat_rate:12" -> "12"
+    function getInstanceId( rateId ) {
+        if ( ! rateId ) return null;
+        var parts = String( rateId ).split( ':' );
+        return parts.length > 1 ? parts[ parts.length - 1 ] : null;
+    }
+
+    function getClassicSelectedInstanceIds() {
+        var ids = [];
+        $( 'input[name^="shipping_method"]:checked' ).each( function () {
+            var id = getInstanceId( $( this ).val() );
+            if ( id ) ids.push( id );
+        } );
+        return ids;
+    }
+
+    function getBlockSelectedInstanceIds() {
+        var ids = [];
+        if ( typeof wp === 'undefined' || ! wp.data || ! wp.data.select ) return ids;
+        var cartStore = wp.data.select( 'wc/store/cart' );
+        if ( ! cartStore || ! cartStore.getShippingRates ) return ids;
+
+        ( cartStore.getShippingRates() || [] ).forEach( function ( pkg ) {
+            ( pkg.shipping_rates || [] ).forEach( function ( rate ) {
+                if ( rate.selected ) {
+                    var id = getInstanceId( rate.rate_id );
+                    if ( id ) ids.push( id );
+                }
+            } );
+        } );
+        return ids;
+    }
+
+    function updateBoxNowVisibility() {
+        if ( ! allowedShippingIds.length ) return;
+
+        var selectedIds = isBlockCheckout ? getBlockSelectedInstanceIds() : getClassicSelectedInstanceIds();
+        var match = selectedIds.some( function ( id ) {
+            return allowedShippingIds.indexOf( id ) !== -1;
+        } );
+
+        var $target = isBlockCheckout ? $( '#cc-boxnow-block-wrapper' ) : $( 'tr.cc-boxnow-addon-row' );
+
+        if ( match ) {
+            $target.removeClass( 'cc-boxnow-shipping-hidden' );
+        } else {
+            if ( $( '#cc-boxnow-toggle' ).is( ':checked' ) ) {
+                $( '#cc-boxnow-toggle' ).prop( 'checked', false ).trigger( 'change' );
+            }
+            $target.addClass( 'cc-boxnow-shipping-hidden' );
+        }
+    }
+
     // ─── Block Checkout: inject widget before payment block (bottom of form) ───
 
     function injectWidgetInBlockCheckout() {
@@ -165,6 +223,20 @@
     // ─────────────────────────────────────────────────────────────────────────
 
     $( document ).ready( function () {
+
+        // Εμφάνιση/απόκρυψη BOX NOW ανάλογα με την επιλεγμένη μέθοδο αποστολής
+        if ( allowedShippingIds.length ) {
+            updateBoxNowVisibility();
+
+            if ( isBlockCheckout ) {
+                if ( typeof wp !== 'undefined' && wp.data && wp.data.subscribe ) {
+                    wp.data.subscribe( updateBoxNowVisibility );
+                }
+            } else {
+                $( document.body ).on( 'updated_checkout', updateBoxNowVisibility );
+                $( document ).on( 'change', 'input[name^="shipping_method"]', updateBoxNowVisibility );
+            }
+        }
 
         // Block checkout: τοποθετεί το widget πριν το payment block
         if ( isBlockCheckout ) {

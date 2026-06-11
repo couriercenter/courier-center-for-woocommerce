@@ -44,10 +44,11 @@ class CC_BoxNow_Checkout {
         );
 
         wp_localize_script( 'cc-boxnow-checkout', 'ccBoxNow', array(
-            'partnerId'       => 10853,
-            'ajaxUrl'         => admin_url( 'admin-ajax.php' ),
-            'sessionNonce'    => wp_create_nonce( 'cc_boxnow_session_nonce' ),
-            'isBlockCheckout' => $this->is_block_checkout() ? '1' : '0',
+            'partnerId'                  => 10853,
+            'ajaxUrl'                    => admin_url( 'admin-ajax.php' ),
+            'sessionNonce'               => wp_create_nonce( 'cc_boxnow_session_nonce' ),
+            'isBlockCheckout'            => $this->is_block_checkout() ? '1' : '0',
+            'allowedShippingInstanceIds' => array_map( 'strval', (array) get_option( 'cc_wc_boxnow_shipping_methods', array() ) ),
         ) );
     }
 
@@ -55,8 +56,9 @@ class CC_BoxNow_Checkout {
         $enabled = get_option( 'cc_wc_boxnow_enabled', '0' );
         if ( $enabled !== '1' ) return;
         if ( $this->is_block_checkout() ) return;
+        if ( empty( get_option( 'cc_wc_boxnow_shipping_methods', array() ) ) ) return;
         ?>
-        <tr class="cc-boxnow-addon-row">
+        <tr class="cc-boxnow-addon-row cc-boxnow-shipping-hidden">
             <td colspan="2" class="cc-boxnow-addon-cell">
                 <?php $this->render_widget_inner(); ?>
             </td>
@@ -69,8 +71,9 @@ class CC_BoxNow_Checkout {
         if ( ! $this->is_block_checkout() ) return;
         $enabled = get_option( 'cc_wc_boxnow_enabled', '0' );
         if ( $enabled !== '1' ) return;
+        if ( empty( get_option( 'cc_wc_boxnow_shipping_methods', array() ) ) ) return;
         ?>
-        <div id="cc-boxnow-block-wrapper" style="display:none;">
+        <div id="cc-boxnow-block-wrapper" class="cc-boxnow-shipping-hidden" style="display:none;">
             <?php $this->render_widget_inner(); ?>
         </div>
         <?php
