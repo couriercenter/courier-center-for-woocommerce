@@ -333,6 +333,28 @@ class CC_Settings {
             'cc_wc_auto_create_section',
             array( 'label_for' => 'cc_wc_auto_create_status' )
         );
+
+        // ── Διαχειρίσιμες μέθοδοι αποστολής ────────────────────────────────────
+        add_settings_section(
+            'cc_wc_handled_section',
+            __( '🚚 Μέθοδοι αποστολής που διαχειρίζεται το plugin', 'courier-center-woocommerce' ),
+            array( $this, 'handled_section_callback' ),
+            'courier-center'
+        );
+
+        register_setting( 'cc_wc_settings', 'cc_wc_handled_shipping_methods', array(
+            'type'              => 'array',
+            'sanitize_callback' => array( $this, 'sanitize_handled_shipping_methods' ),
+            'default'           => array(),
+        ) );
+        add_settings_field(
+            'cc_wc_handled_shipping_methods',
+            __( 'Διαχειρίσιμες μέθοδοι', 'courier-center-woocommerce' ),
+            array( $this, 'handled_shipping_methods_field_callback' ),
+            'courier-center',
+            'cc_wc_handled_section',
+            array( 'label_for' => 'cc_wc_handled_shipping_methods' )
+        );
     }
 
     /**
@@ -885,6 +907,86 @@ class CC_Settings {
         );
     }
 
+    // ── Διαχειρίσιμες μέθοδοι αποστολής callbacks ─────────────────────────────
+
+    public function handled_section_callback() {
+        echo '<p>' . esc_html__( 'Επιλέξτε ποιες μεθόδους αποστολής διαχειρίζεται το plugin. Voucher Courier Center (αυτόματα, μαζικά ή χειροκίνητα) δημιουργείται μόνο για παραγγελίες με αυτές τις μεθόδους — οι υπόλοιπες (π.χ. άλλος courier) αγνοούνται.', 'courier-center-woocommerce' ) . '</p>';
+
+        $methods = get_option( 'cc_wc_handled_shipping_methods', array() );
+        if ( empty( $methods ) ) {
+            echo '<div class="notice notice-warning inline"><p>';
+            esc_html_e( 'Δεν έχει επιλεγεί καμία μέθοδος αποστολής. Μέχρι να επιλέξετε τουλάχιστον μία, το plugin θεωρεί ότι διαχειρίζεται ΟΛΕΣ τις παραγγελίες.', 'courier-center-woocommerce' );
+            echo '</p></div>';
+        }
+    }
+
+    /**
+     * Sanitize + save-time validation: απαιτείται τουλάχιστον 1 μέθοδος.
+     */
+    public function sanitize_handled_shipping_methods( $value ) {
+        $clean = is_array( $value ) ? array_values( array_filter( array_map( 'absint', $value ) ) ) : array();
+
+        if ( empty( $clean ) ) {
+            add_settings_error(
+                'cc_wc_handled_shipping_methods',
+                'cc_wc_handled_empty',
+                __( 'Δεν έχει επιλεγεί καμία μέθοδος αποστολής στο πεδίο «Μέθοδοι αποστολής που διαχειρίζεται το plugin». Επιλέξτε τουλάχιστον μία.', 'courier-center-woocommerce' ),
+                'error'
+            );
+            // Κράτα την προηγούμενη αποθηκευμένη τιμή αντί να αποθηκεύσεις κενό
+            return array_map( 'absint', (array) get_option( 'cc_wc_handled_shipping_methods', array() ) );
+        }
+
+        return $clean;
+    }
+
+    public function handled_shipping_methods_field_callback( $args ) {
+        $selected = array_map( 'absint', (array) get_option( $args['label_for'], array() ) );
+        $this->render_shipping_methods_checklist( $args['label_for'], $selected );
+
+        echo '<p class="description">';
+        esc_html_e( 'Μόνο παραγγελίες με τις επιλεγμένες μεθόδους δημιουργούν voucher αυτόματα/μαζικά. Στη χειροκίνητη δημιουργία, ο διαχειριστής μπορεί να παρακάμψει με επιβεβαίωση.', 'courier-center-woocommerce' );
+        echo '</p>';
+    }
+
+    /**
+     * Render checkbox-λίστας όλων των shipping methods όλων των zones.
+     */
+    private function render_shipping_methods_checklist( $name, array $selected ) {
+        $zones   = \WC_Shipping_Zones::get_zones();
+        $zones[] = array(
+            'zone_id'   => 0,
+            'zone_name' => __( 'Υπόλοιπος Κόσμος', 'courier-center-woocommerce' ),
+        );
+
+        $found_any = false;
+
+        foreach ( $zones as $zone_data ) {
+            $zone    = new \WC_Shipping_Zone( $zone_data['zone_id'] );
+            $methods = $zone->get_shipping_methods();
+
+            if ( empty( $methods ) ) {
+                continue;
+            }
+
+            foreach ( $methods as $method ) {
+                $found_any = true;
+                printf(
+                    '<label style="display:block;margin-bottom:4px;"><input type="checkbox" name="%s[]" value="%d" %s> %s &mdash; <em>%s</em></label>',
+                    esc_attr( $name ),
+                    esc_attr( $method->instance_id ),
+                    checked( in_array( $method->instance_id, $selected, true ), true, false ),
+                    esc_html( $method->get_title() ),
+                    esc_html( $zone_data['zone_name'] )
+                );
+            }
+        }
+
+        if ( ! $found_any ) {
+            echo '<p class="description">' . esc_html__( 'Δεν βρέθηκαν shipping methods. Ρυθμίστε πρώτα τις ζώνες αποστολής στο WooCommerce.', 'courier-center-woocommerce' ) . '</p>';
+        }
+    }
+
     // ── Auto-create voucher callbacks ─────────────────────────────────────────
 
     public function auto_create_section_callback() {
@@ -951,6 +1053,7 @@ class CC_Settings {
             'cc_wc_boxnow_default_selected',
             'cc_wc_auto_create_enabled',
             'cc_wc_auto_create_status',
+            'cc_wc_handled_shipping_methods',
         );
 
         foreach ( $options as $option ) {

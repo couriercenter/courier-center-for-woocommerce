@@ -103,14 +103,13 @@ class CC_Order_Meta_Box {
                 }
             });
 
-            // Create voucher handler
-            \$(document).on('click', '#cc-create-voucher-btn', function(e) {
-                e.preventDefault();
-
+            // Create voucher (override = παράκαμψη ελέγχου μεθόδου αποστολής)
+            function ccDoCreateVoucher(override) {
                 var \$form = \$('#cc-create-voucher-form');
                 var \$button = \$('#cc-create-voucher-btn');
                 var \$status = \$('#cc-ajax-status');
-                var originalText = \$button.text();
+                var originalText = \$button.data('origText');
+                if ( ! originalText ) { originalText = \$button.text(); \$button.data('origText', originalText); }
 
                 \$button.prop('disabled', true).text('⏳ Δημιουργία...');
                 \$status.html('').removeClass('cc-error cc-success');
@@ -125,7 +124,8 @@ class CC_Order_Meta_Box {
                         service_type: \$form.find('[name=service_type]').val(),
                         boxnow: \$form.find('[name=boxnow]').is(':checked') ? '1' : '0',
                         return_option: \$form.find('[name=return_option]:checked').val() || 'none',
-                        parcel_count: \$('#cc-multi-parcel').is(':checked') ? parseInt(\$('#cc-parcel-count').val()) : 1
+                        parcel_count: \$('#cc-multi-parcel').is(':checked') ? parseInt(\$('#cc-parcel-count').val()) : 1,
+                        override: override ? '1' : '0'
                     },
                     success: function(response) {
                         if (response.success) {
@@ -133,6 +133,13 @@ class CC_Order_Meta_Box {
                             setTimeout(function() { location.reload(); }, 1000);
                         } else {
                             \$button.prop('disabled', false).text(originalText);
+                            if (response.data && response.data.needs_override) {
+                                \$status.addClass('cc-error').html('⚠️ ' + (response.data.message || ''));
+                                if ( confirm('Είστε σίγουροι ότι θέλετε να δημιουργήσετε την αποστολή στην Courier Center;') ) {
+                                    ccDoCreateVoucher(true);
+                                }
+                                return;
+                            }
                             \$status.addClass('cc-error').html('❌ ' + (response.data.message || 'Σφάλμα'));
                         }
                     },
@@ -141,6 +148,12 @@ class CC_Order_Meta_Box {
                         \$status.addClass('cc-error').html('❌ AJAX error: ' + error);
                     }
                 });
+            }
+
+            // Create voucher handler
+            \$(document).on('click', '#cc-create-voucher-btn', function(e) {
+                e.preventDefault();
+                ccDoCreateVoucher(false);
             });
 
             // Void shipment handler
@@ -638,6 +651,18 @@ class CC_Order_Meta_Box {
             wp_send_json_error( array( 'message' => 'Υπάρχει ήδη ενεργό voucher για αυτή την παραγγελία' ) );
         }
 
+        // Μέθοδος αποστολής που δεν διαχειρίζεται το plugin → ζήτα επιβεβαίωση (override)
+        $override = isset( $_POST['override'] ) && $_POST['override'] === '1';
+        if ( ! $override && ! CC_Shipment_Builder::is_handled_order( $order ) ) {
+            wp_send_json_error( array(
+                'needs_override' => true,
+                'message'        => sprintf(
+                    'Η παραγγελία χρησιμοποιεί μέθοδο αποστολής «%s», που δεν διαχειρίζεται το plugin.',
+                    $order->get_shipping_method() ?: '—'
+                ),
+            ) );
+        }
+
         $service_type = isset( $_POST['service_type'] ) ? sanitize_text_field( $_POST['service_type'] ) : 'next_day';
         $boxnow       = ( isset( $_POST['boxnow'] ) && $_POST['boxnow'] === '1' )
                         || ! empty( $order->get_meta( '_boxnow_locker_id' ) )
@@ -844,6 +869,12 @@ class CC_Order_Meta_Box {
         $existing_voucher = $order->get_meta( '_cc_voucher_number' );
         $is_voided        = $order->get_meta( '_cc_voided' ) === '1';
         if ( $existing_voucher && ! $is_voided ) {
+            return;
+        }
+
+        // Μόνο για μεθόδους αποστολής που διαχειρίζεται το plugin
+        if ( ! CC_Shipment_Builder::is_handled_order( $order ) ) {
+            $order->add_order_note( '⚠️ Αυτόματη δημιουργία voucher παραλείφθηκε: η μέθοδος αποστολής (' . ( $order->get_shipping_method() ?: '—' ) . ') δεν διαχειρίζεται από το plugin.' );
             return;
         }
 

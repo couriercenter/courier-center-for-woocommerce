@@ -444,6 +444,13 @@ class CC_Bulk_Actions {
             $is_voided = $order->get_meta( '_cc_voided' ) === '1';
             if ( $existing && ! $is_voided ) { $skipped++; continue; }
 
+            // Μόνο για μεθόδους αποστολής που διαχειρίζεται το plugin
+            if ( ! CC_Shipment_Builder::is_handled_order( $order ) ) {
+                $skipped++;
+                $errors[] = "#$order_id: Μη διαχειρίσιμη μέθοδος αποστολής";
+                continue;
+            }
+
             $builder = new CC_Shipment_Builder( $order );
             $check = $builder->validate_settings();
             if ( is_wp_error( $check ) ) { $failed++; $errors[] = "#$order_id: " . $check->get_error_message(); continue; }

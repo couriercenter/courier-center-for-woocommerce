@@ -81,6 +81,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-settings.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-order-meta-box.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-bulk-actions.php';
+        require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-orders-column.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-manifest-page.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-bug-report.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-updater.php';
@@ -105,6 +106,7 @@ class Courier_Center_WooCommerce {
         $this->settings       = new CC_Settings();
         $this->order_meta_box = new CC_Order_Meta_Box();
         $this->bulk_actions = new CC_Bulk_Actions();
+        new CC_Orders_Column();
         $this->manifest_page = new CC_Manifest_Page();
         $this->email_integration = new CC_Email_Integration();
         $this->bug_report = new CC_Bug_Report();

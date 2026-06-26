@@ -54,6 +54,36 @@ class CC_Shipment_Builder {
     }
 
     /**
+     * Τα instance IDs των shipping methods μιας παραγγελίας.
+     *
+     * @return int[]
+     */
+    public static function order_shipping_instance_ids( WC_Order $order ) {
+        $ids = array();
+        foreach ( $order->get_shipping_methods() as $item ) {
+            $instance_id = method_exists( $item, 'get_instance_id' ) ? (int) $item->get_instance_id() : 0;
+            if ( $instance_id ) {
+                $ids[] = $instance_id;
+            }
+        }
+        return $ids;
+    }
+
+    /**
+     * Διαχειρίζεται το plugin αυτή την παραγγελία βάσει της μεθόδου αποστολής;
+     *
+     * Αν δεν έχει ρυθμιστεί καμία μέθοδος (κενό option) επιστρέφει true ("όλες"),
+     * ώστε να μη σπάσει υπάρχουσα ροή. Το «τουλάχιστον 1» επιβάλλεται στο save.
+     */
+    public static function is_handled_order( WC_Order $order ) {
+        $handled = array_map( 'absint', (array) get_option( 'cc_wc_handled_shipping_methods', array() ) );
+        if ( empty( $handled ) ) {
+            return true;
+        }
+        return (bool) array_intersect( self::order_shipping_instance_ids( $order ), $handled );
+    }
+
+    /**
      * Load plugin settings
      */
     private function load_settings() {
