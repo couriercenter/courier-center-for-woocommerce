@@ -284,6 +284,20 @@ class CC_Settings {
             array( 'label_for' => 'cc_wc_boxnow_shipping_methods' )
         );
 
+        register_setting( 'cc_wc_settings', 'cc_wc_boxnow_default_selected', array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '0',
+        ) );
+        add_settings_field(
+            'cc_wc_boxnow_default_selected',
+            __( 'Προεπιλεγμένη επιλογή BOX NOW', 'courier-center-woocommerce' ),
+            array( $this, 'boxnow_default_selected_field_callback' ),
+            'courier-center',
+            'cc_wc_boxnow_section',
+            array( 'label_for' => 'cc_wc_boxnow_default_selected' )
+        );
+
         // ── Auto-create voucher section ───────────────────────────────────────
         add_settings_section(
             'cc_wc_auto_create_section',
@@ -860,6 +874,17 @@ class CC_Settings {
         echo '</p>';
     }
 
+    public function boxnow_default_selected_field_callback( $args ) {
+        $value = get_option( $args['label_for'], '0' );
+        printf(
+            '<label><input type="checkbox" id="%s" name="%s" value="1" %s> %s</label>',
+            esc_attr( $args['label_for'] ),
+            esc_attr( $args['label_for'] ),
+            checked( $value, '1', false ),
+            esc_html__( 'Να εμφανίζεται ήδη τσεκαρισμένο και κλειδωμένο όταν ο πελάτης επιλέξει μέθοδο "Courier Center". Για να το αφαιρέσει, ο πελάτης επιλέγει άλλη μέθοδο αποστολής.', 'courier-center-woocommerce' )
+        );
+    }
+
     // ── Auto-create voucher callbacks ─────────────────────────────────────────
 
     public function auto_create_section_callback() {
@@ -923,6 +948,7 @@ class CC_Settings {
             'cc_wc_print_template_boxnow',
             'cc_wc_boxnow_enabled',
             'cc_wc_boxnow_shipping_methods',
+            'cc_wc_boxnow_default_selected',
             'cc_wc_auto_create_enabled',
             'cc_wc_auto_create_status',
         );

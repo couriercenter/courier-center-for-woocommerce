@@ -49,6 +49,7 @@ class CC_BoxNow_Checkout {
             'sessionNonce'               => wp_create_nonce( 'cc_boxnow_session_nonce' ),
             'isBlockCheckout'            => $this->is_block_checkout() ? '1' : '0',
             'allowedShippingInstanceIds' => array_map( 'strval', (array) get_option( 'cc_wc_boxnow_shipping_methods', array() ) ),
+            'defaultSelected'            => get_option( 'cc_wc_boxnow_default_selected', '0' ),
         ) );
     }
 

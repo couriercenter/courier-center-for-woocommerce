@@ -112,6 +112,28 @@ tr.cc-boxnow-addon-row td,
     color: #5DC122 !important;
 }
 
+/* Κλειδωμένο BOX NOW (default selection) — δείχνει ότι δεν ξε-τσεκάρεται */
+.cc-boxnow-toggle-label.cc-boxnow-locked,
+.cc-boxnow-toggle-label.cc-boxnow-locked input[type="checkbox"] {
+    cursor: not-allowed !important;
+}
+
+.cc-boxnow-locked-notice {
+    display: none;
+    margin-top: 8px !important;
+    padding: 8px 11px !important;
+    font-size: 12.5px !important;
+    line-height: 1.4 !important;
+    color: #8a6d00 !important;
+    background: #fff8e1 !important;
+    border: 1px solid #ffe08a !important;
+    border-radius: 8px !important;
+}
+
+.cc-boxnow-locked-notice.cc-visible {
+    display: block;
+}
+
 /* ─────────────────────────────────────────
    Options panel
 ───────────────────────────────────────── */

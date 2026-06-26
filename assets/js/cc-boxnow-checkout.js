@@ -6,9 +6,13 @@
     var allowedShippingIds = ( typeof ccBoxNow !== 'undefined' && Array.isArray( ccBoxNow.allowedShippingInstanceIds ) )
         ? ccBoxNow.allowedShippingInstanceIds
         : [];
+    var defaultSelected = ( typeof ccBoxNow !== 'undefined' && ccBoxNow.defaultSelected === '1' );
     var sdkLoaded       = false;
     var mapInited       = false;
     var widgetWrapper   = null; // saved reference for block checkout re-injection
+    var toggleLocked       = false; // true όταν το BOX NOW είναι κλειδωμένο (default selection)
+    var programmaticToggle = false; // guard: τα προγραμματιστικά change δεν μετράνε ως ενέργεια χρήστη
+    var lockedNoticeTimer  = null;
 
     // Ορισμός config ΠΡΙΝ φορτώσει το SDK
     window._bn_map_widget_config = {
@@ -90,6 +94,21 @@
     function clearValidationError() {
         $( '#cc-boxnow-widget-wrap' ).removeClass( 'cc-has-error' );
         $( '#cc-boxnow-validation-error' ).remove();
+    }
+
+    // Ειδοποίηση όταν ο πελάτης προσπαθεί να ξε-τσεκάρει το κλειδωμένο BOX NOW
+    function showLockedNotice() {
+        var $notice = $( '#cc-boxnow-locked-notice' );
+        if ( ! $notice.length ) {
+            $notice = $( '<div id="cc-boxnow-locked-notice" class="cc-boxnow-locked-notice"></div>' )
+                .text( 'Για να αφαιρέσετε την υπηρεσία BOX NOW, επιλέξτε άλλον τρόπο μεταφοράς.' );
+            $( '#cc-boxnow-widget-wrap' ).append( $notice );
+        }
+        $notice.addClass( 'cc-visible' );
+        clearTimeout( lockedNoticeTimer );
+        lockedNoticeTimer = setTimeout( function () {
+            $notice.removeClass( 'cc-visible' );
+        }, 5000 );
     }
 
     // FIX #2: Προσθήκη onerror — εμφανίζει μήνυμα αν το BOX NOW CDN δεν φορτώσει
@@ -193,9 +212,26 @@
 
         if ( match ) {
             $target.removeClass( 'cc-boxnow-shipping-hidden' );
+
+            // Default selection: τσεκάρισμα + κλείδωμα του BOX NOW
+            if ( defaultSelected ) {
+                toggleLocked = true;
+                $( '#cc-boxnow-toggle-label' ).addClass( 'cc-boxnow-locked' );
+                if ( ! $( '#cc-boxnow-toggle' ).is( ':checked' ) ) {
+                    programmaticToggle = true;
+                    $( '#cc-boxnow-toggle' ).prop( 'checked', true ).trigger( 'change' );
+                    programmaticToggle = false;
+                }
+            }
         } else {
+            // Ξεκλείδωμα ΠΡΙΝ το uncheck, ώστε το προγραμματιστικό change να μην μπλοκαριστεί
+            toggleLocked = false;
+            $( '#cc-boxnow-toggle-label' ).removeClass( 'cc-boxnow-locked' );
+            $( '#cc-boxnow-locked-notice' ).removeClass( 'cc-visible' );
             if ( $( '#cc-boxnow-toggle' ).is( ':checked' ) ) {
+                programmaticToggle = true;
                 $( '#cc-boxnow-toggle' ).prop( 'checked', false ).trigger( 'change' );
+                programmaticToggle = false;
             }
             $target.addClass( 'cc-boxnow-shipping-hidden' );
         }
@@ -264,6 +300,13 @@
 
         // Toggle BOX NOW options
         $( document ).on( 'change', '#cc-boxnow-toggle', function () {
+            // Κλειδωμένο BOX NOW: ο πελάτης δεν μπορεί να το ξε-τσεκάρει χειροκίνητα
+            if ( ! $( this ).is( ':checked' ) && toggleLocked && ! programmaticToggle ) {
+                $( this ).prop( 'checked', true );
+                showLockedNotice();
+                return;
+            }
+
             if ( $( this ).is( ':checked' ) ) {
                 $( '#cc-boxnow-options' ).addClass( 'cc-visible' );
             } else {
