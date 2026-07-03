@@ -408,10 +408,13 @@ class CC_Shipment_Builder {
         foreach ( $this->order->get_items() as $item ) {
             $product = $item->get_product();
             if ( $product && $product->get_weight() ) {
-                $weight += (float) $product->get_weight() * $item->get_quantity();
+                // Το προϊόν αποθηκεύει βάρος στη μονάδα των ρυθμίσεων WooCommerce
+                // (π.χ. g, lbs) — μετατροπή σε kg πριν χρησιμοποιηθεί.
+                $weight_kg = wc_get_weight( (float) $product->get_weight(), 'kg' );
+                $weight   += $weight_kg * $item->get_quantity();
             }
         }
-        return $weight > 0 ? $weight : 1.0;
+        return $weight > 0 ? $weight : self::DEFAULT_WEIGHT_KG;
     }
 
     private function get_volumetric_weight() {
@@ -419,9 +422,9 @@ class CC_Shipment_Builder {
         foreach ( $this->order->get_items() as $item ) {
             $product = $item->get_product();
             if ( $product ) {
-                $l = (float) $product->get_length();
-                $w = (float) $product->get_width();
-                $h = (float) $product->get_height();
+                $l = wc_get_dimension( (float) $product->get_length(), 'cm' );
+                $w = wc_get_dimension( (float) $product->get_width(), 'cm' );
+                $h = wc_get_dimension( (float) $product->get_height(), 'cm' );
                 if ( $l && $w && $h ) {
                     // Volumetric weight = (L x W x H) / 5000
                     $volume += ( $l * $w * $h / 5000 ) * $item->get_quantity();
@@ -435,11 +438,12 @@ class CC_Shipment_Builder {
         foreach ( $this->order->get_items() as $item ) {
             $product = $item->get_product();
             if ( $product ) {
-                $l = (float) $product->get_length();
-                $w = (float) $product->get_width();
-                $h = (float) $product->get_height();
+                // Το προϊόν αποθηκεύει διαστάσεις στη μονάδα των ρυθμίσεων
+                // WooCommerce (π.χ. mm, in) — μετατροπή σε cm πριν χρησιμοποιηθεί.
+                $l = wc_get_dimension( (float) $product->get_length(), 'cm' );
+                $w = wc_get_dimension( (float) $product->get_width(), 'cm' );
+                $h = wc_get_dimension( (float) $product->get_height(), 'cm' );
                 if ( $l > 0 && $w > 0 && $h > 0 ) {
-                    // Μετατροπή από cm σε cm (WooCommerce αποθηκεύει σε cm)
                     return array(
                         'length' => $l,
                         'width'  => $w,

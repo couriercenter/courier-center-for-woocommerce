@@ -63,6 +63,11 @@ if ( ! defined( 'ABSPATH' ) ) {
     <div class="cc-card" id="cc-new">
         <h2>⭐ Τι νέο σε κάθε έκδοση</h2>
 
+        <h3>v1.4.2</h3>
+        <ul style="list-style:disc;margin-left:20px;">
+            <li><strong>Διόρθωση κρίσιμου bug βάρους/διαστάσεων:</strong> όταν το κατάστημα έχει τη μονάδα βάρους ή διαστάσεων του WooCommerce σε κάτι διαφορετικό από kg/cm (π.χ. γραμμάρια, mm, ίντσες), το plugin μετέτρεπε λανθασμένα τον αριθμό σαν να ήταν ήδη σε kg/cm — π.χ. προϊόν 60 γραμμαρίων εμφανιζόταν ως 60 kg και απέρριπτε τη δημιουργία voucher. Τώρα γίνεται σωστή μετατροπή μονάδων πριν σταλεί στο Courier Center API.</li>
+        </ul>
+
         <h3>v1.4.1</h3>
         <ul style="list-style:disc;margin-left:20px;">
             <li><strong>Νέα σελίδα «Οδηγίες»</strong> μέσα στο plugin — πλήρης οδηγός χρήσης &amp; changelog, πάντα ενημερωμένος.</li>
