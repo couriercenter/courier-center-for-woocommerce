@@ -58,6 +58,7 @@ class CC_Updater {
             'headers'     => array( 'Content-Type' => 'application/json' ),
             'body'        => wp_json_encode( array(
                 'site_url'       => get_site_url(),
+                'platform'       => 'woocommerce',
                 'plugin_version' => CC_WC_VERSION,
                 'wp_version'     => get_bloginfo( 'version' ),
                 'wc_version'     => $wc_version,
