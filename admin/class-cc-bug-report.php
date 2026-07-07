@@ -224,6 +224,7 @@ class CC_Bug_Report {
 
         $payload = array(
             'site_url'       => get_site_url(),
+            'platform'       => 'woocommerce',
             'wp_version'     => $wp_version,
             'plugin_version' => CC_WC_VERSION,
             'wc_version'     => defined( 'WC_VERSION' ) ? WC_VERSION : 'N/A',
