@@ -176,8 +176,14 @@
 
     function getClassicSelectedInstanceIds() {
         var ids = [];
-        $( 'input[name^="shipping_method"]:checked' ).each( function () {
-            var id = getInstanceId( $( this ).val() );
+        // Όταν σε ένα package υπάρχει μόνο μία μέθοδος, το WooCommerce κάνει render
+        // κρυφό input (type="hidden") αντί για radio — το οποίο δεν είναι ποτέ :checked.
+        // Μετράμε λοιπόν: (α) τα επιλεγμένα radios και (β) τα κρυφά inputs (μοναδική μέθοδος).
+        $( 'input[name^="shipping_method"]' ).each( function () {
+            var $input = $( this );
+            var type   = ( $input.attr( 'type' ) || '' ).toLowerCase();
+            if ( type === 'radio' && ! $input.is( ':checked' ) ) return;
+            var id = getInstanceId( $input.val() );
             if ( id ) ids.push( id );
         } );
         return ids;

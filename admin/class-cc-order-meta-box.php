@@ -391,14 +391,16 @@ class CC_Order_Meta_Box {
             </style>
 
             <?php if ( $voucher_number && $is_voided ) : ?>
-                <!-- VOIDED STATE -->
+                <!-- VOIDED STATE: ιστορικό του ακυρωμένου AWB.
+                     Δεν σταματά τη ροή — από κάτω ακολουθεί η κανονική φόρμα δημιουργίας,
+                     ώστε να μπορεί να ξαναγίνει αποστολή η ίδια παραγγελία. -->
                 <div class="cc-voucher-info" style="background: #fce8e6; border-left-color: #dc3232;">
                     <strong>❌ Αποστολή Ακυρωμένη</strong>
                     <p><strong>AWB:</strong> <del><?php echo esc_html( $voucher_number ); ?></del></p>
                 </div>
-                <p style="margin-top: 10px; font-size: 12px; color: #666;">Μπορείτε να δημιουργήσετε νέο voucher αν χρειάζεται.</p>
+            <?php endif; ?>
 
-            <?php elseif ( $voucher_number ) : ?>
+            <?php if ( $voucher_number && ! $is_voided ) : ?>
                 <?php
                 $return_awb    = $order->get_meta( '_cc_return_awb' );
                 $return_option = $order->get_meta( '_cc_return_option' );
@@ -413,6 +415,10 @@ class CC_Order_Meta_Box {
                     <p><strong>AWB:</strong> <?php echo esc_html( $voucher_number ); ?></p>
                     <?php if ( $tracking_number && $tracking_number !== $voucher_number ) : ?>
                         <p><strong>Tracking:</strong> <?php echo esc_html( $tracking_number ); ?></p>
+                    <?php endif; ?>
+                    <?php $boxnow_outbound = $order->get_meta( '_cc_boxnow_outbound' ); ?>
+                    <?php if ( ! empty( $boxnow_outbound ) ) : ?>
+                        <p><strong>📦 BOX NOW Parcel ID:</strong> <?php echo esc_html( $boxnow_outbound ); ?></p>
                     <?php endif; ?>
 
                     <?php
@@ -725,6 +731,13 @@ class CC_Order_Meta_Box {
             $order->delete_meta_data( '_cc_shipment_status_desc' );
             $order->delete_meta_data( '_cc_shipment_action_code' );
             $order->delete_meta_data( '_cc_status_updated_at' );
+
+            // Τα παρακάτω γράφονται μόνο υπό συνθήκη παρακάτω, οπότε χωρίς καθάρισμα
+            // θα επιβίωναν από το ακυρωμένο voucher και θα εμφανίζονταν ως δεδομένα του νέου.
+            $order->delete_meta_data( '_cc_return_awb' );
+            $order->delete_meta_data( '_cc_boxnow_fallback' );
+            $order->delete_meta_data( '_cc_boxnow_assigned_locker' );
+            $order->delete_meta_data( '_cc_boxnow_outbound' );
         }
 
         // Save meta
@@ -734,6 +747,12 @@ class CC_Order_Meta_Box {
         $order->update_meta_data( '_cc_boxnow', $boxnow ? '1' : '0' );
         $order->update_meta_data( '_cc_return_option', $return_option );
         $order->update_meta_data( '_cc_created_at', current_time( 'mysql' ) );
+
+        // BOX NOW Parcel ID — το API το επιστρέφει μόνο σε αποστολές BOX NOW,
+        // οπότε η ύπαρξη της τιμής είναι από μόνη της η ένδειξη ότι υπάρχει δέμα BOX NOW.
+        if ( ! empty( $result['OutboundShipmentNumber'] ) ) {
+            $order->update_meta_data( '_cc_boxnow_outbound', sanitize_text_field( $result['OutboundShipmentNumber'] ) );
+        }
 
         // Save return AWB if exists
         $return_awb = '';
@@ -1163,11 +1182,22 @@ class CC_Order_Meta_Box {
 
         if ( $is_voided ) {
             echo '<del style="color:#aaa; font-size:12px;">' . esc_html( $voucher ) . '</del>';
-        } else {
+            return;
+        }
+
+        printf(
+            '<a href="%s" target="_blank" rel="noopener" style="font-size:12px; white-space:nowrap;">%s&nbsp;↗</a>',
+            esc_url( $tracking_url ),
+            esc_html( $voucher )
+        );
+
+        // BOX NOW Parcel ID — υπάρχει μόνο σε αποστολές BOX NOW.
+        // Όπως και στο meta box, εμφανίζεται μόνο σε ενεργή αποστολή.
+        $boxnow_outbound = $order->get_meta( '_cc_boxnow_outbound' );
+        if ( ! empty( $boxnow_outbound ) ) {
             printf(
-                '<a href="%s" target="_blank" rel="noopener" style="font-size:12px; white-space:nowrap;">%s&nbsp;↗</a>',
-                esc_url( $tracking_url ),
-                esc_html( $voucher )
+                '<br><span style="font-size:11px; color:#666; white-space:nowrap;">📦 %s</span>',
+                esc_html( $boxnow_outbound )
             );
         }
     }

@@ -479,6 +479,12 @@ class CC_Bulk_Actions {
                 $order->delete_meta_data( '_cc_shipment_status_desc' );
                 $order->delete_meta_data( '_cc_shipment_action_code' );
                 $order->delete_meta_data( '_cc_status_updated_at' );
+
+                // Υπολείμματα του ακυρωμένου voucher — αλλιώς εμφανίζονται ως δεδομένα του νέου
+                $order->delete_meta_data( '_cc_return_awb' );
+                $order->delete_meta_data( '_cc_boxnow_fallback' );
+                $order->delete_meta_data( '_cc_boxnow_assigned_locker' );
+                $order->delete_meta_data( '_cc_boxnow_outbound' );
             }
 
             $order->update_meta_data( '_cc_voucher_number', $voucher_number );
@@ -486,6 +492,12 @@ class CC_Bulk_Actions {
             $order->update_meta_data( '_cc_service_type', 'next_day' );
             $order->update_meta_data( '_cc_boxnow', $is_boxnow_order ? '1' : '0' );
             $order->update_meta_data( '_cc_created_at', current_time( 'mysql' ) );
+
+            // BOX NOW Parcel ID — επιστρέφεται μόνο σε αποστολές BOX NOW
+            if ( ! empty( $result['OutboundShipmentNumber'] ) ) {
+                $order->update_meta_data( '_cc_boxnow_outbound', sanitize_text_field( $result['OutboundShipmentNumber'] ) );
+            }
+
             $order->save();
 
             $order->add_order_note( '✅ CC voucher (Bulk): ' . $voucher_number . ' | Επόμενη Μέρα' );
