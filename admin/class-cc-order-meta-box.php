@@ -514,6 +514,13 @@ class CC_Order_Meta_Box {
                     </button>
                 </div>
 
+                <button type="button" id="cc-remove-boxnow-btn" class="button button-secondary"
+                        style="width:100%; margin-top:8px; color:#8b4513;"
+                        data-order-id="<?php echo esc_attr( $order->get_id() ); ?>"
+                        data-nonce="<?php echo esc_attr( wp_create_nonce( 'cc_remove_boxnow_' . $order->get_id() ) ); ?>">
+                    ↩️ Αφαίρεση επιλογής BOX NOW
+                </button>
+
                 <div id="cc-ajax-status"></div>
 
                 <?php elseif ( $has_auto_locker ) : ?>
