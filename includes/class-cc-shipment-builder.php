@@ -137,19 +137,28 @@ class CC_Shipment_Builder {
     }
 
     /**
+     * Η τελική διεύθυνση παραλήπτη όπως θα σταλεί στο API — για προεπισκόπηση στο admin.
+     *
+     * @return string
+     */
+    public function get_consignee_address_preview() {
+        $c = $this->get_consignee_fields();
+        return trim( $c['address'] . ', ' . $c['city'] . ' ' . $c['postcode'], ', ' );
+    }
+
+    /**
      * Validate the order itself (consignee data, weight limits etc)
      *
      * @return true|WP_Error
      */
     public function validate_order() {
-        $billing_first = $this->order->get_billing_first_name();
-        $billing_last  = $this->order->get_billing_last_name();
-        $address       = $this->order->get_billing_address_1();
-        $city          = $this->order->get_billing_city();
-        $postcode      = $this->order->get_billing_postcode();
-        $phone         = $this->order->get_billing_phone();
+        $c        = $this->get_consignee_fields();
+        $address  = $c['address'];
+        $city     = $c['city'];
+        $postcode = $c['postcode'];
+        $phone    = $c['phone'];
 
-        if ( empty( $billing_first ) && empty( $billing_last ) ) {
+        if ( empty( $c['name'] ) ) {
             return new WP_Error( 'missing_consignee_name', 'Λείπει το όνομα παραλήπτη.' );
         }
         if ( empty( $address ) ) {
@@ -241,7 +250,7 @@ class CC_Shipment_Builder {
                 'ApiKey'          => $this->settings['api_key'],
             ),
             'shipmentDate' => date( 'Y-m-d' ),
-            'comments'     => 'Order #' . $this->order->get_id(),
+            'comments'     => $this->build_comments(),
             'Requestor'    => array(
                 'CarrierBillingAccount' => $this->settings['billing_account'],
             ),
@@ -311,36 +320,138 @@ class CC_Shipment_Builder {
     }
 
     /**
-     * Build the Consignee block from order billing details
+     * Σχόλια voucher: μόνο η σημείωση πελάτη από το checkout.
+     *
+     * Ο αριθμός παραγγελίας δεν μπαίνει εδώ — μεταφέρεται ήδη στο Reference1
+     * (WC-<id>). Η σημείωση τυπώνεται στο voucher, οπότε καθαρίζεται από αλλαγές
+     * γραμμής και κόβεται ώστε να μην ξεχειλίσει την ετικέτα.
      */
-    private function build_consignee() {
-        $first = $this->order->get_billing_first_name();
-        $last  = $this->order->get_billing_last_name();
-        $name  = trim( $first . ' ' . $last );
-
-        $company = $this->order->get_billing_company();
-        if ( empty( $company ) ) {
-            $company = $name;
+    private function build_comments() {
+        $note = trim( (string) $this->order->get_customer_note() );
+        if ( '' === $note ) {
+            return '';
         }
 
-        $address_1 = $this->order->get_billing_address_1();
-        $address_2 = $this->order->get_billing_address_2();
+        $note = preg_replace( '/\s+/u', ' ', $note );
+
+        return function_exists( 'mb_substr' )
+            ? mb_substr( $note, 0, 200 )
+            : substr( $note, 0, 200 );
+    }
+
+    /**
+     * Επιλέγει τιμή πεδίου παραλήπτη με fallback ανά πεδίο.
+     *
+     * Προτιμάται η διεύθυνση αποστολής όταν η παραγγελία έχει τέτοια, αλλά κάθε
+     * πεδίο πέφτει πίσω στη χρέωση αν είναι κενό. Δεν αρκεί έλεγχος ανά μπλοκ:
+     * το WooCommerce παρακάμπτει το shipping fieldset όταν ο πελάτης δεν επιλέξει
+     * «αποστολή σε άλλη διεύθυνση», και το _shipping_phone είναι προαιρετικό
+     * (συχνά κενό) ενώ το BOX NOW απαιτεί κινητό.
+     */
+    private function consignee_value( $shipping_getter, $billing_getter ) {
+        // Το get_shipping_phone() υπάρχει από WooCommerce 5.6 και μετά.
+        if ( $this->order->has_shipping_address() && is_callable( array( $this->order, $shipping_getter ) ) ) {
+            $value = trim( (string) $this->order->{$shipping_getter}() );
+            if ( '' !== $value ) {
+                return $value;
+            }
+        }
+        return trim( (string) $this->order->{$billing_getter}() );
+    }
+
+    /**
+     * Ο αριθμός οδού, όταν το κατάστημα τον κρατά σε ξεχωριστό πεδίο.
+     *
+     * Το WooCommerce δεν έχει τέτοιο πεδίο — το προσθέτουν themes/plugins με
+     * δικό τους meta key, οπότε το επιλέγει ο merchant από τις Ρυθμίσεις.
+     * Κενή ρύθμιση = ο αριθμός είναι ήδη μέσα στη Διεύθυνση (προεπιλογή).
+     */
+    private function get_street_number() {
+        $meta_key = trim( (string) get_option( 'cc_wc_street_number_field', '' ) );
+        if ( '' === $meta_key ) {
+            return '';
+        }
+
+        $candidates = array( $meta_key );
+
+        // Αν η αποστολή γίνεται στη shipping διεύθυνση και ρυθμίστηκε billing_*
+        // πεδίο, προτιμάται το αντίστοιχο shipping_* — ο αριθμός πρέπει να
+        // ταιριάζει με την οδό που θα σταλεί, όχι με τη διεύθυνση χρέωσης.
+        if ( $this->order->has_shipping_address() ) {
+            $shipping_key = preg_replace( '/^(_?)billing_/', '$1shipping_', $meta_key );
+            if ( $shipping_key !== $meta_key ) {
+                array_unshift( $candidates, $shipping_key );
+            }
+        }
+
+        foreach ( $candidates as $key ) {
+            // Κάποια plugins αποθηκεύουν το ίδιο πεδίο με/χωρίς αρχικό underscore.
+            $alt = ( 0 === strpos( $key, '_' ) ) ? substr( $key, 1 ) : '_' . $key;
+            foreach ( array( $key, $alt ) as $k ) {
+                $value = $this->order->get_meta( $k );
+                if ( is_scalar( $value ) && '' !== trim( (string) $value ) ) {
+                    return trim( (string) $value );
+                }
+            }
+        }
+
+        return '';
+    }
+
+    /**
+     * Τα πεδία παραλήπτη όπως θα σταλούν — μία πηγή αλήθειας για validation,
+     * payload και την προεπισκόπηση στο meta box.
+     */
+    public function get_consignee_fields() {
+        $first = $this->consignee_value( 'get_shipping_first_name', 'get_billing_first_name' );
+        $last  = $this->consignee_value( 'get_shipping_last_name', 'get_billing_last_name' );
+        $name  = trim( $first . ' ' . $last );
+
+        $company = $this->consignee_value( 'get_shipping_company', 'get_billing_company' );
+
+        $address_1 = $this->consignee_value( 'get_shipping_address_1', 'get_billing_address_1' );
+        $address_2 = $this->consignee_value( 'get_shipping_address_2', 'get_billing_address_2' );
         $address   = trim( $address_1 . ' ' . $address_2 );
 
-        $city = $this->order->get_billing_city();
+        // Ο αριθμός μπαίνει μόνο αν δεν βρίσκεται ήδη μέσα στη διεύθυνση.
+        // Ο έλεγχος γίνεται σε όρια λέξης ώστε το «15» να μην θεωρηθεί ότι
+        // υπάρχει επειδή η διεύθυνση λέει «Βενιζέλου 155».
+        $street_number = $this->get_street_number();
+        if ( '' !== $street_number
+             && ! preg_match( '/(^|\s)' . preg_quote( $street_number, '/' ) . '(\s|$)/u', $address ) ) {
+            $address = trim( $address . ' ' . $street_number );
+        }
 
-        $country_code = $this->order->get_billing_country() ?: 'GR';
+        $city    = $this->consignee_value( 'get_shipping_city', 'get_billing_city' );
+        $country = $this->consignee_value( 'get_shipping_country', 'get_billing_country' );
 
         return array(
-            'CompanyName' => $company,
-            'ContactName' => $name,
-            'Address'     => $address,
-            'City'        => $city,
-            'Area'        => $city, // WooCommerce δεν έχει ξεχωριστό area
-            'ZipCode'     => $this->order->get_billing_postcode(),
-            'Country'     => $country_code,
-            'CountryCode' => $country_code,
-            'Mobile1'     => $this->order->get_billing_phone(),
+            'name'     => $name,
+            'company'  => '' !== $company ? $company : $name,
+            'address'  => $address,
+            'city'     => $city,
+            'postcode' => $this->consignee_value( 'get_shipping_postcode', 'get_billing_postcode' ),
+            'country'  => $country ?: 'GR',
+            'phone'    => $this->consignee_value( 'get_shipping_phone', 'get_billing_phone' ),
+        );
+    }
+
+    /**
+     * Build the Consignee block from the resolved consignee fields
+     */
+    private function build_consignee() {
+        $c = $this->get_consignee_fields();
+
+        return array(
+            'CompanyName' => $c['company'],
+            'ContactName' => $c['name'],
+            'Address'     => $c['address'],
+            'City'        => $c['city'],
+            'Area'        => $c['city'], // WooCommerce δεν έχει ξεχωριστό area
+            'ZipCode'     => $c['postcode'],
+            'Country'     => $c['country'],
+            'CountryCode' => $c['country'],
+            'Mobile1'     => $c['phone'],
         );
     }
 

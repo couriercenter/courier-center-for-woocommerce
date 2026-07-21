@@ -562,6 +562,15 @@ class CC_Order_Meta_Box {
 
                 <p style="margin-bottom: 10px;">Δημιουργήστε voucher για αυτή την παραγγελία:</p>
 
+                <?php
+                // Προεπισκόπηση της διεύθυνσης όπως θα σταλεί στο API — ώστε τυχόν
+                // πρόβλημα (π.χ. αριθμός οδού σε custom πεδίο) να φανεί πριν τη δημιουργία
+                $preview_builder = new CC_Shipment_Builder( $order );
+                ?>
+                <p style="font-size:12px; color:#666; margin-bottom:10px;">
+                    📮 Διεύθυνση voucher: <?php echo esc_html( $preview_builder->get_consignee_address_preview() ); ?>
+                </p>
+
                 <div id="cc-create-voucher-form">
                     <input type="hidden" name="order_id" value="<?php echo esc_attr( $order->get_id() ); ?>">
 

@@ -172,6 +172,28 @@ class CC_Settings {
             array( 'label_for' => 'cc_wc_shipper_phone' )
         );
 
+        // ── Στοιχεία παραλήπτη ────────────────────────────────────────────────
+        add_settings_section(
+            'cc_wc_consignee_section',
+            '📍 Στοιχεία Παραλήπτη',
+            array( $this, 'consignee_section_callback' ),
+            'courier-center'
+        );
+
+        register_setting( 'cc_wc_settings', 'cc_wc_street_number_field', array(
+            'type'              => 'string',
+            'sanitize_callback' => array( $this, 'sanitize_street_number_field' ),
+            'default'           => '',
+        ) );
+        add_settings_field(
+            'cc_wc_street_number_field',
+            'Πεδίο αριθμού διεύθυνσης',
+            array( $this, 'street_number_field_callback' ),
+            'courier-center',
+            'cc_wc_consignee_section',
+            array( 'label_for' => 'cc_wc_street_number_field' )
+        );
+
         // Tracking section
         add_settings_section(
             'cc_wc_tracking_section',
@@ -366,6 +388,104 @@ class CC_Settings {
 
     public function shipper_section_callback() {
         echo '<p>Τα στοιχεία του αποστολέα που θα εμφανίζονται στα vouchers.</p>';
+    }
+
+    // ── Στοιχεία παραλήπτη callbacks ─────────────────────────────────────────
+
+    public function consignee_section_callback() {
+        echo '<p>' . esc_html__( 'Το voucher χρησιμοποιεί τη διεύθυνση αποστολής του πελάτη· όποιο πεδίο λείπει (π.χ. τηλέφωνο) συμπληρώνεται από τα στοιχεία χρέωσης.', 'courier-center-woocommerce' ) . '</p>';
+    }
+
+    /**
+     * Χειροκίνητο meta key (αν δόθηκε) υπερισχύει της επιλογής στο dropdown.
+     */
+    public function sanitize_street_number_field( $value ) {
+        $manual = isset( $_POST['cc_wc_street_number_field_manual'] )
+            ? trim( sanitize_text_field( wp_unslash( $_POST['cc_wc_street_number_field_manual'] ) ) )
+            : '';
+
+        if ( '' !== $manual ) {
+            return $manual;
+        }
+
+        return trim( sanitize_text_field( $value ) );
+    }
+
+    public function street_number_field_callback( $args ) {
+        $current    = trim( (string) get_option( 'cc_wc_street_number_field', '' ) );
+        $candidates = $this->discover_street_number_fields();
+
+        // Η αποθηκευμένη τιμή εμφανίζεται πάντα, ακόμα κι αν δεν βρέθηκε στο σκανάρισμα
+        if ( '' !== $current && ! isset( $candidates[ $current ] ) ) {
+            $candidates = array( $current => '' ) + $candidates;
+        }
+
+        printf( '<select id="%1$s" name="%1$s">', esc_attr( $args['label_for'] ) );
+        printf(
+            '<option value="">%s</option>',
+            esc_html__( '— Κανένα: ο αριθμός είναι ήδη μέσα στη «Διεύθυνση» —', 'courier-center-woocommerce' )
+        );
+        foreach ( $candidates as $key => $sample ) {
+            printf(
+                '<option value="%s" %s>%s%s</option>',
+                esc_attr( $key ),
+                selected( $current, $key, false ),
+                esc_html( $key ),
+                '' !== $sample ? esc_html( ' (π.χ. «' . $sample . '»)' ) : ''
+            );
+        }
+        echo '</select>';
+
+        printf(
+            '<p style="margin-top:6px;"><input type="text" class="regular-text" name="cc_wc_street_number_field_manual" value="" placeholder="%s"></p>',
+            esc_attr__( 'ή γράψτε το meta key χειροκίνητα', 'courier-center-woocommerce' )
+        );
+
+        echo '<p class="description">';
+        esc_html_e( 'Μόνο για καταστήματα όπου το checkout έχει ξεχωριστό πεδίο «Αριθμός» εκτός της Διεύθυνσης. Η λίστα δείχνει πεδία που βρέθηκαν στις τελευταίες παραγγελίες, με δείγμα τιμής. Ο αριθμός θα προστίθεται στο τέλος της διεύθυνσης στο voucher.', 'courier-center-woocommerce' );
+        echo '</p>';
+    }
+
+    /**
+     * Σκανάρει τα custom meta των τελευταίων παραγγελιών για πιθανά πεδία
+     * αριθμού οδού: σύντομες τιμές (≤6 χαρακτήρες) που περιέχουν ψηφίο.
+     * Τα δείγματα βοηθούν τον merchant να διαλέξει το σωστό πεδίο.
+     */
+    private function discover_street_number_fields() {
+        if ( ! function_exists( 'wc_get_orders' ) ) {
+            return array();
+        }
+
+        $orders = wc_get_orders( array(
+            'limit'   => 30,
+            'orderby' => 'date',
+            'order'   => 'DESC',
+        ) );
+
+        $found = array();
+        foreach ( $orders as $order ) {
+            foreach ( $order->get_meta_data() as $meta ) {
+                $data  = $meta->get_data();
+                $key   = (string) $data['key'];
+                $value = $data['value'];
+
+                if ( isset( $found[ $key ] ) || ! is_scalar( $value ) ) {
+                    continue;
+                }
+                $value = trim( (string) $value );
+                if ( '' === $value || mb_strlen( $value ) > 6 || ! preg_match( '/\d/u', $value ) ) {
+                    continue;
+                }
+                // Εσωτερικά πεδία του plugin δεν είναι υποψήφια
+                if ( preg_match( '/^_?(cc_|boxnow)/', $key ) ) {
+                    continue;
+                }
+                $found[ $key ] = $value;
+            }
+        }
+
+        ksort( $found );
+        return array_slice( $found, 0, 20, true );
     }
 
     /**
