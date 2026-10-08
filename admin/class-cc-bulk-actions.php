@@ -39,6 +39,7 @@ class CC_Bulk_Actions {
 
         // === COLUMN STYLES ===
         add_action( 'admin_head', array( $this, 'column_styles' ) );
+        add_action( 'admin_footer', array( $this, 'checkbox_click_fix' ) );
     }
 
     // =========================================================================
@@ -174,6 +175,19 @@ class CC_Bulk_Actions {
             .cc-col-boxnow    { background: #fff3e0; color: #e65100; }
             .cc-col-normal    { background: #f1f1f1; color: #555; }
         </style>';
+    }
+
+    /**
+     * Από WordPress 7 το κελί του checkbox είναι <td>, οπότε το row-click του
+     * WooCommerce (wc-orders.js) ανοίγει την παραγγελία όταν πατηθεί το checkbox.
+     * Η κλάση no-link είναι η εξαίρεση που ήδη αναγνωρίζει το WooCommerce.
+     */
+    public function checkbox_click_fix() {
+        $screen = get_current_screen();
+        if ( ! $screen ) { return; }
+        if ( strpos( $screen->id, 'wc-orders' ) === false && $screen->post_type !== 'shop_order' ) { return; }
+
+        echo '<script>jQuery( function( $ ) { $( ".wp-list-table tbody td.check-column" ).addClass( "no-link" ); } );</script>';
     }
 
     // =========================================================================
