@@ -255,29 +255,63 @@ class CC_Bulk_Actions {
             ) );
         }
 
-        // Store AWBs in transient (fallback για μεγάλα batches / sites χωρίς cache lag)
-        $print_key  = 'cc_mass_print_' . get_current_user_id() . '_' . time();
-        $print_data = array(
-            'awbs'        => $awbs,
-            'boxnow_awbs' => $boxnow_awbs,
-        );
-        set_transient( $print_key, $print_data, 300 ); // 5 minutes expiry
+        // Κανονικά και BOX NOW έχουν διαφορετικό template εκτύπωσης, οπότε κάθε
+        // ομάδα βγαίνει σε δικό της PDF (το BOX NOW όπως η ενέργεια cc_mass_print_boxnow).
+        // Με δύο ομάδες μοιράζεται το όριο του cc_pd ώστε το URL του notice να μη μεγαλώνει.
+        $is_mixed    = ! empty( $awbs ) && ! empty( $boxnow_awbs );
+        $max_encoded = $is_mixed ? 3000 : 6000;
+        $print_links = array();
 
-        // Τα δεδομένα περνάνε ΚΑΙ κωδικοποιημένα μέσα στο URL (base64) ώστε να
-        // δουλεύει ακόμα κι αν persistent object cache (SiteGround Optimizer κ.λπ.)
-        // καθυστερήσει να κάνει replicate το transient στο νέο request/tab.
-        $print_url = $this->build_print_url( 'cc_mass_print_vouchers', $print_key, $print_data );
+        if ( ! empty( $awbs ) ) {
+            // Store AWBs in transient (fallback για μεγάλα batches / sites χωρίς cache lag)
+            $print_key  = 'cc_mass_print_' . get_current_user_id() . '_' . time();
+            $print_data = array(
+                'awbs'        => $awbs,
+                'boxnow_awbs' => array(),
+            );
+            set_transient( $print_key, $print_data, 300 ); // 5 minutes expiry
+
+            // Τα δεδομένα περνάνε ΚΑΙ κωδικοποιημένα μέσα στο URL (base64) ώστε να
+            // δουλεύει ακόμα κι αν persistent object cache (SiteGround Optimizer κ.λπ.)
+            // καθυστερήσει να κάνει replicate το transient στο νέο request/tab.
+            $print_links[] = array(
+                'url'    => $this->build_print_url( 'cc_mass_print_vouchers', $print_key, $print_data, $max_encoded ),
+                'count'  => count( $awbs ),
+                'boxnow' => false,
+            );
+        }
+
+        if ( ! empty( $boxnow_awbs ) ) {
+            $print_key  = 'cc_mass_print_boxnow_' . get_current_user_id() . '_' . time();
+            $print_data = array(
+                'awbs'        => $boxnow_awbs,
+                'boxnow_awbs' => array(),
+                'template'    => get_option( 'cc_wc_print_template_boxnow', 'singlepdf_100x150_4up' ),
+            );
+            set_transient( $print_key, $print_data, 300 );
+
+            $print_links[] = array(
+                'url'    => $this->build_print_url( 'cc_mass_print_boxnow_vouchers', $print_key, $print_data, $max_encoded ),
+                'count'  => count( $boxnow_awbs ),
+                'boxnow' => true,
+            );
+        }
 
         // Store the print URL so we can show it in the notice
-        return $this->redirect_with_result( $redirect_to, array(
+        $result = array(
             'type'      => 'print',
             'success'   => count( $awbs ) + count( $boxnow_awbs ),
             'failed'    => 0,
             'skipped'   => $skipped,
             'errors'    => array(),
             'total'     => count( $order_ids ),
-            'print_url' => $print_url,
-        ) );
+            'print_url' => $print_links[0]['url'],
+        );
+        if ( $is_mixed ) {
+            $result['print_links'] = $print_links;
+        }
+
+        return $this->redirect_with_result( $redirect_to, $result );
     }
 
     /**
@@ -370,9 +404,9 @@ class CC_Bulk_Actions {
         $awbs        = $data['awbs'] ?? array();
         $boxnow_awbs = $data['boxnow_awbs'] ?? array();
 
-        // Κανονική εκτύπωση: μόνο regular AWBs — BoxNow εκτυπώνεται ξεχωριστά
-        $print_awbs      = $awbs;
+        // Κάθε PDF έχει μία ομάδα: regular AWBs, ή (αν λείπουν) BOX NOW με το δικό τους template
         $is_boxnow_batch = empty( $awbs ) && ! empty( $boxnow_awbs );
+        $print_awbs      = $is_boxnow_batch ? $boxnow_awbs : $awbs;
         $template = $data['template'] ?? (
             $is_boxnow_batch
                 ? get_option( 'cc_wc_print_template_boxnow', 'singlepdf_100x150_4up' )
@@ -599,15 +633,16 @@ class CC_Bulk_Actions {
      * object cache καθυστερήσει να κάνει replicate το transient στο νέο request/tab.
      * Για πολύ μεγάλα batches (encoded > 6000 chars) παραλείπει το cc_pd και
      * βασίζεται μόνο στο transient (αποφυγή 414 Request-URI Too Large).
+     * Όταν το notice έχει δύο links, ο caller περνά μικρότερο $max_encoded.
      */
-    private function build_print_url( $action, $print_key, array $print_data ) {
+    private function build_print_url( $action, $print_key, array $print_data, $max_encoded = 6000 ) {
         $args = array(
             'action'    => $action,
             'print_key' => $print_key,
         );
 
         $encoded = $this->encode_bulk_result( $print_data );
-        if ( $encoded && strlen( $encoded ) < 6000 ) {
+        if ( $encoded && strlen( $encoded ) < $max_encoded ) {
             $args['cc_pd'] = $encoded;
         }
 
@@ -698,19 +733,50 @@ class CC_Bulk_Actions {
 
         // Special handling for print action - show link to open PDF
         if ( $type === 'print' && ! empty( $result['print_url'] ) ) {
+            // Ανάμικτη επιλογή: ένα PDF για τα κανονικά και ένα για τα BOX NOW
+            $links = ( ! empty( $result['print_links'] ) && is_array( $result['print_links'] ) )
+                ? $result['print_links']
+                : array( array( 'url' => $result['print_url'] ) );
+            $is_split = count( $links ) > 1;
+
             echo '<div class="notice notice-info is-dismissible">';
             echo '<p><strong>🖨️ Courier Center — Μαζική Εκτύπωση</strong></p>';
             echo '<p>' . esc_html( $success ) . ' vouchers έτοιμα για εκτύπωση.';
+            if ( $is_split ) {
+                $regular_count = 0;
+                $boxnow_count  = 0;
+                foreach ( $links as $link ) {
+                    if ( ! empty( $link['boxnow'] ) ) {
+                        $boxnow_count += (int) ( $link['count'] ?? 0 );
+                    } else {
+                        $regular_count += (int) ( $link['count'] ?? 0 );
+                    }
+                }
+                echo ' (' . esc_html( $regular_count ) . ' κανονικά, ' . esc_html( $boxnow_count ) . ' BOX NOW — σε ξεχωριστά PDF)';
+            }
             if ( $skipped > 0 ) {
                 echo ' (' . esc_html( $skipped ) . ' παραλείφθηκαν — χωρίς ενεργό voucher)';
             }
             echo '</p>';
-            echo '<p><a href="' . esc_url( $result['print_url'] ) . '" target="_blank" class="button button-primary">📄 Άνοιγμα PDF για εκτύπωση</a></p>';
+            echo '<p>';
+            foreach ( $links as $link ) {
+                if ( ! $is_split ) {
+                    $label = '📄 Άνοιγμα PDF για εκτύπωση';
+                } elseif ( ! empty( $link['boxnow'] ) ) {
+                    $label = '🟡 Άνοιγμα PDF BOX NOW (' . (int) ( $link['count'] ?? 0 ) . ')';
+                } else {
+                    $label = '📄 Άνοιγμα PDF κανονικών (' . (int) ( $link['count'] ?? 0 ) . ')';
+                }
+                echo '<a href="' . esc_url( $link['url'] ) . '" target="_blank" class="button button-primary">' . esc_html( $label ) . '</a> ';
+            }
+            echo '</p>';
             echo '</div>';
 
             // Auto-open in new tab via JS — decode HTML entities (&amp; → &) so the URL is valid inside a JS string
-            $js_url = html_entity_decode( $result['print_url'], ENT_QUOTES, 'UTF-8' );
-            echo '<script>window.open(' . wp_json_encode( $js_url ) . ', "_blank");</script>';
+            foreach ( $links as $link ) {
+                $js_url = html_entity_decode( $link['url'], ENT_QUOTES, 'UTF-8' );
+                echo '<script>window.open(' . wp_json_encode( $js_url ) . ', "_blank");</script>';
+            }
             return;
         }
 
