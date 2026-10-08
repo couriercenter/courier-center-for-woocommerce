@@ -212,7 +212,7 @@ class CC_Shipment_Builder {
         }
 
         // COD international check
-        $country = $this->order->get_billing_country();
+        $country = $c['country'];
         if ( $country !== 'GR' && $this->is_cod() ) {
             return new WP_Error(
                 'cod_international',
@@ -234,7 +234,7 @@ class CC_Shipment_Builder {
         if ( $service_type === 'next_day' && ! empty( $this->settings['shipper_station'] ) ) {
             $result        = CC_City_Scope::resolve_next_day_service(
                 $this->settings['shipper_station'],
-                $this->order->get_billing_postcode()
+                $this->get_consignee_fields()['postcode']
             );
             $basic_service = $result['service_code'];
         } else {

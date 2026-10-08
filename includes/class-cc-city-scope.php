@@ -1383,7 +1383,7 @@ class CC_City_Scope {
      * Επιλέγει αυτόματα BasicService 111 ή 211 για next_day αποστολές.
      *
      * @param string     $origin_station Κωδικός σταθμού αποστολέα (από setting cc_wc_shipper_station)
-     * @param string|int $dest_postcode  ΤΚ παραλήπτη (από $order->get_billing_postcode())
+     * @param string|int $dest_postcode  ΤΚ παραλήπτη (από τα πεδία παραλήπτη του shipment builder)
      * @return array {
      *     @type string      $service_code  '111' ή '211'
      *     @type string      $scope         'ΕΝΤΟΣ ΠΟΛΗΣ' ή 'ΕΚΤΟΣ ΠΟΛΗΣ'
