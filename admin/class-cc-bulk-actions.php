@@ -483,10 +483,26 @@ class CC_Bulk_Actions {
 
         $success = 0; $failed = 0; $skipped = 0; $errors = array();
         $api = new CC_API();
+        $locked_id = 0;
 
         foreach ( $order_ids as $order_id ) {
+            // Ξεκλείδωμα της προηγούμενης παραγγελίας (κάθε διαδρομή του βρόχου καταλήγει εδώ ή μετά τον βρόχο)
+            if ( $locked_id ) {
+                CC_Shipment_Builder::release_voucher_lock( $locked_id );
+                $locked_id = 0;
+            }
+
             $order = wc_get_order( $order_id );
             if ( ! $order ) { $failed++; $errors[] = "#$order_id: Δεν βρέθηκε"; continue; }
+
+            // Κλείδωμα ώστε ταυτόχρονη δημιουργία (κουμπί / αυτόματη) να μη φτιάξει δεύτερο AWB
+            if ( ! CC_Shipment_Builder::acquire_voucher_lock( $order_id ) ) {
+                $skipped++;
+                $errors[] = "#$order_id: Δημιουργείται ήδη voucher (ταυτόχρονη ενέργεια)";
+                continue;
+            }
+            $locked_id = (int) $order_id;
+            $order->read_meta_data( true );
 
             $existing  = $order->get_meta( '_cc_voucher_number' );
             $is_voided = $order->get_meta( '_cc_voided' ) === '1';
@@ -551,6 +567,10 @@ class CC_Bulk_Actions {
             $order->add_order_note( '✅ CC voucher (Bulk): ' . $voucher_number . ' | Επόμενη Μέρα' );
             $success++;
             usleep( 100000 ); // 100ms αντί 300ms για αποφυγή timeout
+        }
+
+        if ( $locked_id ) {
+            CC_Shipment_Builder::release_voucher_lock( $locked_id );
         }
 
         return $this->redirect_with_result( $redirect_to, array(

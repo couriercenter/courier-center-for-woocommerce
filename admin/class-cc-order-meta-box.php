@@ -665,6 +665,15 @@ class CC_Order_Meta_Box {
             wp_send_json_error( array( 'message' => 'Order not found' ) );
         }
 
+        // Κλείδωμα ώστε ταυτόχρονες αιτήσεις να μη φτιάξουν δεύτερο AWB —
+        // ξεκλειδώνει αυτόματα στο τέλος του request
+        if ( ! CC_Shipment_Builder::acquire_voucher_lock( $order_id ) ) {
+            wp_send_json_error( array( 'message' => '⏳ Δημιουργείται ήδη voucher για αυτή την παραγγελία (από άλλον χρήστη ή αυτόματα). Ανανέωσε τη σελίδα σε λίγα δευτερόλεπτα.' ) );
+        }
+
+        // Φρέσκα meta από τη βάση — μπορεί να τα έγραψε η αίτηση που κρατούσε το κλείδωμα
+        $order->read_meta_data( true );
+
         // Allow re-creation after void
         $existing_voucher = $order->get_meta( '_cc_voucher_number' );
         $is_voided        = $order->get_meta( '_cc_voided' ) === '1';
@@ -893,12 +902,35 @@ class CC_Order_Meta_Box {
             return;
         }
 
-        if ( ! ( $order instanceof WC_Order ) ) {
-            $order = wc_get_order( $order_id );
+        // Κλείδωμα ώστε π.χ. διπλό webhook πληρωμής να μη φτιάξει δεύτερο AWB
+        if ( ! CC_Shipment_Builder::acquire_voucher_lock( $order_id ) ) {
+            if ( ! ( $order instanceof WC_Order ) ) {
+                $order = wc_get_order( $order_id );
+            }
+            if ( $order ) {
+                $order->add_order_note( '⚠️ Αυτόματη δημιουργία voucher παραλείφθηκε: δημιουργείται ήδη voucher (ταυτόχρονη ενέργεια).' );
+            }
+            return;
         }
+
+        try {
+            $this->auto_create_voucher( $order_id, $new_status );
+        } finally {
+            CC_Shipment_Builder::release_voucher_lock( $order_id );
+        }
+    }
+
+    /**
+     * Η δημιουργία του maybe_auto_create_voucher_on_status_change(), με το
+     * κλείδωμα ήδη πιασμένο.
+     */
+    private function auto_create_voucher( $order_id, $new_status ) {
+        // Φρέσκια παραγγελία από τη βάση — μπορεί να έγραψε voucher η αίτηση που κρατούσε το κλείδωμα
+        $order = wc_get_order( $order_id );
         if ( ! $order ) {
             return;
         }
+        $order->read_meta_data( true );
 
         // Μην ξαναδημιουργήσεις αν υπάρχει ήδη ενεργό (μη ακυρωμένο) voucher
         $existing_voucher = $order->get_meta( '_cc_voucher_number' );

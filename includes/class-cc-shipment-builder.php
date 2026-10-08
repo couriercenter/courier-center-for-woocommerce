@@ -45,6 +45,19 @@ class CC_Shipment_Builder {
     private $parcel_count = 1;
 
     /**
+     * Λήξη κλειδώματος δημιουργίας voucher (δευτερόλεπτα). Πάνω από το timeout
+     * του API (60s), ώστε να λήγει μόνο κλείδωμα αίτησης που διακόπηκε βίαια.
+     */
+    const VOUCHER_LOCK_TTL = 180;
+
+    /**
+     * Tokens των κλειδωμάτων που κρατά το τρέχον request (order_id => token)
+     *
+     * @var array
+     */
+    private static $voucher_locks = array();
+
+    /**
      * Constructor
      */
     public function __construct( WC_Order $order, array $settings = array(), int $parcel_count = 1 ) {
@@ -81,6 +94,86 @@ class CC_Shipment_Builder {
             return true;
         }
         return (bool) array_intersect( self::order_shipping_instance_ids( $order ), $handled );
+    }
+
+    /**
+     * Κλείδωμα ανά παραγγελία για τη δημιουργία voucher, ώστε δύο ταυτόχρονες
+     * αιτήσεις (δύο χρήστες, διπλό webhook πληρωμής, μαζική + χειροκίνητη) να μη
+     * φτιάξουν δύο AWB.
+     *
+     * INSERT IGNORE αντί για add_option(): το add_option κάνει ON DUPLICATE KEY
+     * UPDATE και μπορεί να επιστρέψει true και στις δύο αιτήσεις. Απευθείας SQL,
+     * ώστε να μην παρεμβάλλεται object cache. Ξεκλειδώνει αυτόματα στο τέλος του
+     * request (και στα wp_send_json_*, που κάνουν exit).
+     *
+     * @param int $order_id
+     * @return bool True αν πάρθηκε το κλείδωμα
+     */
+    public static function acquire_voucher_lock( $order_id ) {
+        global $wpdb;
+
+        $order_id = (int) $order_id;
+        $name     = 'cc_voucher_lock_' . $order_id;
+        $token    = time() . '|' . wp_generate_password( 12, false );
+
+        for ( $attempt = 0; $attempt < 2; $attempt++ ) {
+            $inserted = $wpdb->query( $wpdb->prepare(
+                "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'no')",
+                $name,
+                $token
+            ) );
+
+            if ( 1 === (int) $inserted ) {
+                self::$voucher_locks[ $order_id ] = $token;
+                register_shutdown_function( array( __CLASS__, 'release_voucher_lock' ), $order_id );
+                return true;
+            }
+
+            if ( $attempt > 0 ) {
+                break;
+            }
+
+            // Υπάρχει ήδη κλείδωμα — αν έχει λήξει (αίτηση που διακόπηκε), σβήσ' το και ξαναδοκίμασε
+            $current = $wpdb->get_var( $wpdb->prepare(
+                "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s",
+                $name
+            ) );
+            if ( null === $current ) {
+                continue;
+            }
+            $locked_at = (int) strtok( (string) $current, '|' );
+            if ( time() - $locked_at < self::VOUCHER_LOCK_TTL ) {
+                return false;
+            }
+            $wpdb->query( $wpdb->prepare(
+                "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
+                $name,
+                $current
+            ) );
+        }
+
+        return false;
+    }
+
+    /**
+     * Ξεκλειδώνει — σβήνει μόνο το δικό μας κλείδωμα (ίδιο token), ποτέ ξένο.
+     *
+     * @param int $order_id
+     */
+    public static function release_voucher_lock( $order_id ) {
+        global $wpdb;
+
+        $order_id = (int) $order_id;
+        if ( empty( self::$voucher_locks[ $order_id ] ) ) {
+            return;
+        }
+
+        $wpdb->query( $wpdb->prepare(
+            "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s",
+            'cc_voucher_lock_' . $order_id,
+            self::$voucher_locks[ $order_id ]
+        ) );
+        unset( self::$voucher_locks[ $order_id ] );
     }
 
     /**
