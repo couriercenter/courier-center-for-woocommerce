@@ -1285,25 +1285,8 @@ class CC_Order_Meta_Box {
             wp_send_json_error( array( 'message' => 'Δεν βρέθηκε status στο API response.' ) );
         }
 
-        // Save status to order meta
-        $old_status = $order->get_meta( '_cc_shipment_status' );
-
-        $order->update_meta_data( '_cc_shipment_status', $status_code );
-        $order->update_meta_data( '_cc_shipment_status_desc', $status_desc );
-        $order->update_meta_data( '_cc_shipment_action_code', $action_code );
-        $order->update_meta_data( '_cc_status_updated_at', current_time( 'Y-m-d H:i' ) );
-        $order->save();
-
-        // Add order note only if status changed
-        if ( $old_status !== $status_code ) {
-            $action_text = $action_code ? " (Action: $action_code)" : '';
-            $order->add_order_note( sprintf(
-                '📍 Status ενημερώθηκε: %s - %s%s',
-                $status_code,
-                $status_desc,
-                $action_text
-            ) );
-        }
+        // Save status to order meta (+ σημείωση, τελικό status, ολοκλήρωση παραγγελίας)
+        CC_Status_Tracker::apply_status( $order, $status_code, $status_desc, $action_code, 'manual' );
 
         $message = $status_desc ?: "Status: $status_code";
         if ( $action_code ) {

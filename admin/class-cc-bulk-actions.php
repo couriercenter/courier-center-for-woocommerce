@@ -606,26 +606,9 @@ class CC_Bulk_Actions {
             }
             if ( empty( $status_code ) && empty( $status_desc ) ) { $failed++; $errors[] = "#$order_id ($awb): Δεν βρέθηκε status"; continue; }
 
-            $old_status = $order->get_meta( '_cc_shipment_status' );
-            $order->update_meta_data( '_cc_shipment_status', $status_code );
-            $order->update_meta_data( '_cc_shipment_status_desc', $status_desc );
-            $order->update_meta_data( '_cc_shipment_action_code', $action_code );
-            $order->update_meta_data( '_cc_status_updated_at', current_time( 'Y-m-d H:i' ) );
-
-            $final = array( '29', '25', '99', '14', '87', '95' );
-            if ( in_array( $status_code, $final, true ) ) {
-                $order->update_meta_data( '_cc_shipment_final', '1' );
-            }
-            $order->save();
+            CC_Status_Tracker::apply_status( $order, $status_code, $status_desc, $action_code, 'bulk' );
 
             CC_Status_Tracker::mark_check_now( $order );
-
-            if ( $old_status !== $status_code ) {
-                $order->add_order_note( sprintf( '📍 [Bulk] Status: %s - %s', $status_code, $status_desc ) );
-                if ( in_array( $status_code, array( '29', '87' ), true ) && $order->get_status() !== 'completed' ) {
-                    $order->update_status( 'completed', '🚚 Αυτόματη ολοκλήρωση - Παραδόθηκε.' );
-                }
-            }
 
             $updated++;
             usleep( 500000 );

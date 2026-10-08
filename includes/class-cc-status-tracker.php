@@ -98,6 +98,9 @@ class CC_Status_Tracker {
         // Register the cron action
         add_action( 'cc_status_tracking_cron', array( $this, 'run_status_update' ) );
 
+        // Χωρίς email «Completed» για σιωπηλή ολοκλήρωση παραγγελιών που είχαν μείνει πίσω
+        add_filter( 'woocommerce_email_enabled_customer_completed_order', array( $this, 'maybe_block_completed_email' ), 10, 2 );
+
         // Schedule cron - τρέχει ΑΜΕΣΩΣ στον constructor, χωρίς hook
         $next = wp_next_scheduled( 'cc_status_tracking_cron' );
         if ( ! $next ) {
@@ -233,7 +236,26 @@ class CC_Status_Tracker {
             return;
         }
 
+        self::apply_status( $order, $status_code, $status_desc, $action_code, 'auto' );
+    }
+
+    /**
+     * Αποθηκεύει το status της αποστολής — κοινό για cron ('auto'), μαζική
+     * ενημέρωση ('bulk') και το κουμπί της παραγγελίας ('manual').
+     *
+     * Η σημείωση μπαίνει μόνο όταν αλλάζει το status. Η ολοκλήρωση της παραγγελίας
+     * για παραδομένες αποστολές ελέγχεται πάντα, ώστε να μην «κολλάει» όταν το
+     * status είχε ήδη αποθηκευτεί (π.χ. από το χειροκίνητο κουμπί).
+     *
+     * @param WC_Order $order
+     * @param string   $status_code
+     * @param string   $status_desc
+     * @param string   $action_code
+     * @param string   $source      'auto' | 'bulk' | 'manual'
+     */
+    public static function apply_status( $order, $status_code, $status_desc, $action_code, $source ) {
         $old_status = $order->get_meta( '_cc_shipment_status' );
+        $changed    = ( $old_status !== $status_code );
 
         $order->update_meta_data( '_cc_shipment_status', $status_code );
         $order->update_meta_data( '_cc_shipment_status_desc', $status_desc );
@@ -248,22 +270,60 @@ class CC_Status_Tracker {
         $order->save();
 
         // Add order note only if status changed
-        if ( $old_status !== $status_code ) {
+        if ( $changed ) {
             $action_text = $action_code ? " (Action: $action_code)" : '';
-            $order->add_order_note( sprintf(
-                '📍 [Auto] Status: %s - %s%s',
-                $status_code,
-                $status_desc,
-                $action_text
-            ) );
-
-            // Auto-complete order if delivered
-            if ( in_array( $status_code, array( '29', '87' ), true ) ) {
-                if ( $order->get_status() !== 'completed' ) {
-                    $order->update_status( 'completed', '🚚 Αυτόματη ολοκλήρωση - Η αποστολή παραδόθηκε.' );
-                }
+            if ( 'bulk' === $source ) {
+                $note = sprintf( '📍 [Bulk] Status: %s - %s', $status_code, $status_desc );
+            } elseif ( 'manual' === $source ) {
+                $note = sprintf( '📍 Status ενημερώθηκε: %s - %s%s', $status_code, $status_desc, $action_text );
+            } else {
+                $note = sprintf( '📍 [Auto] Status: %s - %s%s', $status_code, $status_desc, $action_text );
             }
+            $order->add_order_note( $note );
         }
+
+        // Auto-complete order if delivered — μόνο από ενεργές καταστάσεις, ώστε να
+        // μην αναιρείται ακύρωση ή επιστροφή χρημάτων που έκανε ο έμπορος.
+        if ( in_array( $status_code, array( '29', '87' ), true )
+             && in_array( $order->get_status(), array( 'processing', 'on-hold', 'pending' ), true ) ) {
+
+            if ( ! $changed ) {
+                // Η παράδοση είχε ήδη καταγραφεί (παραγγελία που είχε μείνει πίσω) —
+                // ολοκλήρωση χωρίς καθυστερημένο email «Completed» στον πελάτη.
+                $order->update_meta_data( '_cc_silent_complete_ts', time() );
+                $order->save();
+            }
+
+            $completed_note = ( 'bulk' === $source )
+                ? '🚚 Αυτόματη ολοκλήρωση - Παραδόθηκε.'
+                : '🚚 Αυτόματη ολοκλήρωση - Η αποστολή παραδόθηκε.';
+            $order->update_status( 'completed', $completed_note );
+        }
+    }
+
+    /**
+     * Μπλοκάρει ΜΙΑ φορά το email «Completed order» μιας παραγγελίας που
+     * ολοκληρώθηκε σιωπηλά από το apply_status(). Το σημάδι σβήνεται στην πρώτη
+     * απόπειρα αποστολής — λειτουργεί και με deferred emails (Action Scheduler,
+     * αργότερα) και αφήνει ελεύθερη μια μεταγενέστερη επαναποστολή από τον έμπορο.
+     * Σημάδι παλαιότερο από 24 ώρες αγνοείται.
+     */
+    public function maybe_block_completed_email( $enabled, $order ) {
+        if ( ! $order instanceof WC_Order ) {
+            return $enabled;
+        }
+        $ts = (int) $order->get_meta( '_cc_silent_complete_ts' );
+        if ( ! $ts ) {
+            return $enabled;
+        }
+
+        $order->delete_meta_data( '_cc_silent_complete_ts' );
+        $order->save_meta_data();
+
+        if ( ( time() - $ts ) < DAY_IN_SECONDS ) {
+            return false;
+        }
+        return $enabled;
     }
 
     /**
