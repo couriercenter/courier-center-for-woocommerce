@@ -44,6 +44,23 @@ class CC_Updater {
         return $release;
     }
 
+    /**
+     * Το URL του zip που ανεβάζει το release workflow. Κενό αν δεν έχει ανέβει ακόμα —
+     * το zipball του GitHub έχει άλλο όνομα φακέλου και δεν χρησιμοποιείται ποτέ.
+     */
+    private function get_package_url( $release ) {
+        if ( empty( $release->assets ) ) {
+            return '';
+        }
+        foreach ( $release->assets as $asset ) {
+            if ( isset( $asset->name ) && $asset->name === 'courier-center-for-woocommerce.zip'
+                 && ( ! isset( $asset->state ) || $asset->state === 'uploaded' ) ) {
+                return $asset->browser_download_url;
+            }
+        }
+        return '';
+    }
+
     public static function send_ping( $force = false ) {
         if ( ! $force && get_transient( 'cc_wc_ping_sent' ) ) {
             return;
@@ -90,18 +107,14 @@ class CC_Updater {
         $current_version = $transient->checked[ $this->plugin_slug ] ?? CC_WC_VERSION;
 
         if ( version_compare( $current_version, $latest_version, '<' ) ) {
-            $package_url = $release->zipball_url;
-            if ( ! empty( $release->assets ) ) {
-                foreach ( $release->assets as $asset ) {
-                    if ( strpos( $asset->name, 'courier-center-for-woocommerce.zip' ) !== false ) {
-                        $package_url = $asset->browser_download_url;
-                        break;
-                    }
+            $package_url = $this->get_package_url( $release );
+            if ( '' === $package_url ) {
+                // Το zip δεν έχει ανέβει ακόμα — καμία ενημέρωση μέχρι να υπάρξει
+                if ( isset( $transient->response[ $this->plugin_slug ] ) ) {
+                    unset( $transient->response[ $this->plugin_slug ] );
                 }
+                return $transient;
             }
-
-            error_log( 'CC Updater - package URL: ' . ( $package_url ?? 'no asset' ) );
-            error_log( 'CC Updater - zipball URL: ' . $release->zipball_url );
 
             $transient->response[ $this->plugin_slug ] = (object) array(
                 'id'           => $this->plugin_slug,
@@ -137,7 +150,7 @@ class CC_Updater {
             'version'       => ltrim( $release->tag_name, 'v' ),
             'author'        => 'Courier Center',
             'homepage'      => 'https://courier.gr',
-            'download_link' => $release->zipball_url,
+            'download_link' => $this->get_package_url( $release ),
             'sections'      => array(
                 'description' => 'Ενσωμάτωση Courier Center με WooCommerce.',
                 'changelog'   => $release->body ?? '',
