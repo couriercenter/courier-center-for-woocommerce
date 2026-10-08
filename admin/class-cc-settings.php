@@ -14,8 +14,17 @@ class CC_Settings {
      */
     public function __construct() {
         add_action( 'admin_init', array( $this, 'register_settings' ) );
+        add_filter( 'option_page_capability_cc_wc_settings', array( $this, 'settings_capability' ) );
         add_action( 'wp_ajax_cc_test_and_autofill', array( $this, 'ajax_test_and_autofill' ) );
         add_action( 'wp_ajax_cc_clear_settings',    array( $this, 'ajax_clear_settings' ) );
+    }
+
+    /**
+     * Η σελίδα ρυθμίσεων είναι ορατή με manage_woocommerce — το ίδιο δικαίωμα
+     * χρειάζεται και η αποθήκευση μέσω options.php (default: manage_options).
+     */
+    public function settings_capability( $capability ) {
+        return 'manage_woocommerce';
     }
 
     /**
