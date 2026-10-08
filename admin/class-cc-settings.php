@@ -47,7 +47,7 @@ class CC_Settings {
         // CredentialValue
         register_setting( 'cc_wc_settings', 'cc_wc_credential_value', array(
             'type'              => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
+            'sanitize_callback' => array( $this, 'sanitize_credential_value' ),
         ) );
         add_settings_field(
             'cc_wc_credential_value',
@@ -61,7 +61,7 @@ class CC_Settings {
         // ApiKey
         register_setting( 'cc_wc_settings', 'cc_wc_api_key', array(
             'type'              => 'string',
-            'sanitize_callback' => 'sanitize_text_field',
+            'sanitize_callback' => array( $this, 'sanitize_api_key' ),
         ) );
         add_settings_field(
             'cc_wc_api_key',
@@ -623,15 +623,30 @@ class CC_Settings {
         $option = get_option( $args['label_for'] );
         $display_value = $option ? str_repeat( '•', 20 ) : '';
         printf(
-            '<input type="password" id="%s" name="%s" value="%s" class="regular-text" placeholder="%s">',
+            '<input type="password" id="%s" name="%s" value="" class="regular-text" placeholder="%s" autocomplete="new-password">',
             esc_attr( $args['label_for'] ),
             esc_attr( $args['label_for'] ),
-            esc_attr( $option ),
             esc_attr( $display_value )
         );
         if ( $option ) {
-            echo '<p class="description">Αποθηκευμένο - αφήστε κενό για να μην αλλάξει</p>';
+            echo '<p class="description">Αποθηκευμένο — άφησε κενό για να μην αλλάξει</p>';
         }
+    }
+
+    public function sanitize_credential_value( $value ) {
+        return $this->keep_secret_if_empty( $value, 'cc_wc_credential_value' );
+    }
+
+    public function sanitize_api_key( $value ) {
+        return $this->keep_secret_if_empty( $value, 'cc_wc_api_key' );
+    }
+
+    /**
+     * Τα password πεδία εμφανίζονται κενά — κενή υποβολή σημαίνει «μην αλλάξεις».
+     */
+    private function keep_secret_if_empty( $value, $option ) {
+        $value = sanitize_text_field( (string) $value );
+        return '' === $value ? (string) get_option( $option, '' ) : $value;
     }
 
     /**
