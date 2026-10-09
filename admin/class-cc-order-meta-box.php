@@ -125,6 +125,7 @@ class CC_Order_Meta_Box {
                         boxnow: \$form.find('[name=boxnow]').is(':checked') ? '1' : '0',
                         return_option: \$form.find('[name=return_option]:checked').val() || 'none',
                         parcel_count: \$('#cc-multi-parcel').is(':checked') ? parseInt(\$('#cc-parcel-count').val()) : 1,
+                        pickup_point: \$form.find('[name=pickup_point]').val() || '',
                         override: override ? '1' : '0'
                     },
                     success: function(response) {
@@ -413,6 +414,7 @@ class CC_Order_Meta_Box {
                 <div class="cc-voucher-info">
                     <strong>✅ Voucher Δημιουργήθηκε</strong>
                     <p><strong>AWB:</strong> <?php echo esc_html( $voucher_number ); ?></p>
+                    <?php $this->render_pickup_point_info( $order ); ?>
                     <?php if ( $tracking_number && $tracking_number !== $voucher_number ) : ?>
                         <p><strong>Tracking:</strong> <?php echo esc_html( $tracking_number ); ?></p>
                     <?php endif; ?>
@@ -509,6 +511,7 @@ class CC_Order_Meta_Box {
                     <input type="hidden" name="boxnow"       value="1">
                     <input type="hidden" name="return_option" value="none">
                     <input type="hidden" name="parcel_count"  value="1">
+                    <?php $this->render_pickup_point_select( $order ); ?>
                     <button type="button" id="cc-create-voucher-btn" class="button button-primary" style="width:100%; height:36px;">
                         🚀 Δημιουργία BOX NOW Voucher
                     </button>
@@ -541,6 +544,7 @@ class CC_Order_Meta_Box {
                     <input type="hidden" name="boxnow"        value="1">
                     <input type="hidden" name="return_option" value="none">
                     <input type="hidden" name="parcel_count"  value="1">
+                    <?php $this->render_pickup_point_select( $order ); ?>
                     <button type="button" id="cc-create-voucher-btn" class="button button-primary" style="width:100%; height:36px;">
                         🚀 Δημιουργία BOX NOW Voucher
                     </button>
@@ -627,6 +631,7 @@ class CC_Order_Meta_Box {
                         <small style="color: #666;">Αυτόματη αναζήτηση σε ακτίνα 1.5km</small>
                     </label>
 
+                    <?php $this->render_pickup_point_select( $order ); ?>
                     <button type="button" id="cc-create-voucher-btn" class="button button-primary" style="width: 100%; height: 36px;">
                         🚀 Δημιουργία Voucher
                     </button>
@@ -638,6 +643,54 @@ class CC_Order_Meta_Box {
 
             <?php endif; // voucher exists or not ?>
         </div>
+        <?php
+    }
+
+    /**
+     * Dropdown «Σημείο αποστολής» στη φόρμα δημιουργίας — μόνο όταν υπάρχουν υποκωδικοί.
+     * Προεπιλογή: το σημείο που είχε η παραγγελία (επαναδημιουργία μετά από ακύρωση),
+     * αλλιώς το προεπιλεγμένο των ρυθμίσεων.
+     */
+    public function render_pickup_point_select( $order ) {
+        if ( ! CC_Pickup_Points::has_sub_points() ) {
+            return;
+        }
+
+        $selected = (string) $order->get_meta( '_cc_pickup_point' );
+        if ( '' === $selected || ! CC_Pickup_Points::get_point( $selected ) ) {
+            $selected = CC_Pickup_Points::get_default_code();
+        }
+        ?>
+        <label for="cc_pickup_point" style="display: block; margin: 8px 0 5px; font-weight: 600;">
+            📍 Σημείο αποστολής:
+        </label>
+        <select name="pickup_point" id="cc_pickup_point" class="cc-service-select">
+            <?php foreach ( CC_Pickup_Points::get_points() as $point ) : ?>
+                <option value="<?php echo esc_attr( $point['code'] ); ?>" <?php selected( $selected, $point['code'] ); ?>>
+                    <?php echo esc_html( CC_Pickup_Points::display_label( $point ) ); ?>
+                </option>
+            <?php endforeach; ?>
+        </select>
+        <?php
+    }
+
+    /**
+     * Από ποιο σημείο βγήκε το voucher (και πού χρεώνεται, αν διαφέρει).
+     * Ο κωδικός φαίνεται ακόμα κι αν το σημείο έχει σβηστεί από τις ρυθμίσεις.
+     */
+    public function render_pickup_point_info( $order ) {
+        $code = (string) $order->get_meta( '_cc_pickup_point' );
+        if ( '' === $code || ! CC_Pickup_Points::has_sub_points() ) {
+            return;
+        }
+
+        $point     = CC_Pickup_Points::get_point( $code );
+        $requestor = (string) $order->get_meta( '_cc_requestor_account' );
+        ?>
+        <p><strong>📍 Σημείο:</strong> <?php echo esc_html( $point ? CC_Pickup_Points::display_label( $point ) : $code ); ?></p>
+        <?php if ( '' !== $requestor && $requestor !== $code ) : ?>
+            <p><strong>Χρέωση:</strong> <?php echo esc_html( $requestor ); ?></p>
+        <?php endif; ?>
         <?php
     }
 
@@ -709,6 +762,16 @@ class CC_Order_Meta_Box {
 
         $builder = new CC_Shipment_Builder( $order, array(), $parcel_count );
 
+        // Σημείο αποστολής: κενό = το προεπιλεγμένο των ρυθμίσεων
+        $pickup_point = isset( $_POST['pickup_point'] ) ? sanitize_text_field( wp_unslash( $_POST['pickup_point'] ) ) : '';
+        if ( '' === $pickup_point ) {
+            $pickup_point = CC_Pickup_Points::get_default_code();
+        }
+        $point_check = $builder->use_pickup_point( $pickup_point );
+        if ( is_wp_error( $point_check ) ) {
+            wp_send_json_error( array( 'message' => $point_check->get_error_message() ) );
+        }
+
         $settings_check = $builder->validate_settings();
         if ( is_wp_error( $settings_check ) ) {
             wp_send_json_error( array( 'message' => $settings_check->get_error_message() ) );
@@ -766,6 +829,7 @@ class CC_Order_Meta_Box {
         }
 
         // Save meta
+        $builder->save_pickup_point_meta();
         $order->update_meta_data( '_cc_voucher_number', $voucher_number );
         $order->update_meta_data( '_cc_tracking_number', $tracking_number );
         $order->update_meta_data( '_cc_service_type', $service_type );
@@ -847,11 +911,12 @@ class CC_Order_Meta_Box {
         $return_label = $return_labels[ $return_option ] ?? '';
 
         $note = sprintf(
-            '✅ Courier Center voucher: %s | Υπηρεσία: %s%s%s',
+            '✅ Courier Center voucher: %s | Υπηρεσία: %s%s%s%s',
             $voucher_number,
             $service_label,
             $boxnow_label,
-            $return_label
+            $return_label,
+            $builder->pickup_point_note()
         );
 
         if ( ! empty( $return_awb ) ) {
@@ -959,6 +1024,12 @@ class CC_Order_Meta_Box {
 
         $builder = new CC_Shipment_Builder( $order, array(), 1 );
 
+        $point_check = $builder->use_pickup_point( CC_Pickup_Points::get_default_code() );
+        if ( is_wp_error( $point_check ) ) {
+            $order->add_order_note( '⚠️ Αυτόματη δημιουργία voucher παραλείφθηκε: ' . $point_check->get_error_message() );
+            return;
+        }
+
         $settings_check = $builder->validate_settings();
         if ( is_wp_error( $settings_check ) ) {
             $order->add_order_note( '⚠️ Αυτόματη δημιουργία voucher παραλείφθηκε: ' . $settings_check->get_error_message() );
@@ -1003,6 +1074,7 @@ class CC_Order_Meta_Box {
             $order->delete_meta_data( '_cc_status_updated_at' );
         }
 
+        $builder->save_pickup_point_meta();
         $order->update_meta_data( '_cc_voucher_number', $voucher_number );
         $order->update_meta_data( '_cc_tracking_number', $tracking_number );
         $order->update_meta_data( '_cc_service_type', $service_type );
@@ -1016,10 +1088,11 @@ class CC_Order_Meta_Box {
             : $new_status;
 
         $order->add_order_note( sprintf(
-            '🤖 Αυτόματη δημιουργία voucher (κατάσταση → %s): %s | Υπηρεσία: Επόμενη Μέρα%s',
+            '🤖 Αυτόματη δημιουργία voucher (κατάσταση → %s): %s | Υπηρεσία: Επόμενη Μέρα%s%s',
             $status_label,
             $voucher_number,
-            $boxnow ? ' + BOX NOW' : ''
+            $boxnow ? ' + BOX NOW' : '',
+            $builder->pickup_point_note()
         ) );
     }
 
