@@ -55,6 +55,37 @@ class CC_Returns_Service {
         return isset( $labels[ $method ] ) ? $labels[ $method ] : $method;
     }
 
+    /**
+     * Τα μηνύματα επιτυχίας δημιουργίας (§7.4 / §10.6) ως array( array( κείμενο, τιμή, είναι_κωδικός ), ... ).
+     * Κοινό για το My Account και τα emails πελάτη. Αν λείπει ο κωδικός BOX NOW (ή το μέγεθος), η γραμμή παραλείπεται.
+     */
+    public static function creation_parts( array $row ) {
+        $parts = array( array( 'Η επιστροφή σας δημιουργήθηκε επιτυχώς!', '', false ) );
+        if ( CC_Returns_Rules::METHOD_BOXNOW === $row['method'] ) {
+            $parts[] = array( 'Μπορείτε να παραδώσετε το δέμα σας σε ένα BOX NOW locker που σας εξυπηρετεί.', '', false );
+            if ( '' !== (string) $row['return_shipment_number'] ) {
+                $parts[] = array( 'Κωδικός BOX NOW επιστροφής: ', (string) $row['return_shipment_number'], true );
+            }
+            $parts[] = array( 'Αριθμός αποστολής Courier Center: ', (string) $row['return_awb'], false );
+            if ( isset( CC_Returns_Rules::LOCKER_SIZES[ $row['locker_size'] ] ) ) {
+                $parts[] = array( 'Επιλεγμένο μέγεθος: ', CC_Returns_Rules::LOCKER_SIZES[ $row['locker_size'] ]['label'], false );
+            }
+        } else {
+            $parts[] = array( 'Μπορείτε να παραδώσετε το δέμα σας σε κατάστημα Courier Center.', '', false );
+            $parts[] = array( 'Αριθμός αποστολής επιστροφής: ', (string) $row['return_awb'], false );
+        }
+        return $parts;
+    }
+
+    /** Τα ίδια μηνύματα ως απλές γραμμές κειμένου (για emails). */
+    public static function creation_message_lines( array $row ) {
+        $lines = array();
+        foreach ( self::creation_parts( $row ) as $part ) {
+            $lines[] = $part[0] . $part[1];
+        }
+        return $lines;
+    }
+
     // ── Επιλεξιμότητα / ποσότητες ────────────────────────────────────────────
 
     /**

@@ -84,6 +84,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-account.php';
         require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-returns-admin.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-emails.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
@@ -131,6 +132,7 @@ class Courier_Center_WooCommerce {
         new CC_Returns_Settings();
         new CC_Returns_Account(); // My Account: αίτημα επιστροφής (τρέχει και στο frontend)
         $this->returns_admin = new CC_Returns_Admin(); // Επιστροφές: σελίδα αιτημάτων + meta box παραγγελίας
+        new CC_Returns_Emails(); // Επιστροφές: emails πελάτη (ελήφθη, δημιουργήθηκε, απορρίφθηκε)
         new CC_Updater();
     }
 
