@@ -25,7 +25,7 @@ class CC_Returns_Tracker {
     /** @var CC_API */
     private $api;
 
-    public function __construct( CC_API $api = null ) {
+    public function __construct( ?CC_API $api = null ) {
         $this->api = $api ? $api : new CC_API();
     }
 
@@ -88,7 +88,7 @@ class CC_Returns_Tracker {
      *
      * @param CC_API|null $api Για tests· στην παραγωγή δεν δίνεται.
      */
-    public static function cron( CC_API $api = null ) {
+    public static function cron( ?CC_API $api = null ) {
         $api     = $api ? $api : new CC_API();
         $service = new CC_Returns_Service( $api );
         $tracker = new self( $api );

@@ -20,7 +20,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 echo '= ' . wp_strip_all_tags( $email_heading ) . " =
 
 ";
-echo wp_strip_all_tags( sprintf( 'Γεια σας %s,', $order->get_billing_first_name() ) ) . "
+$cc_first_name = trim( (string) $order->get_billing_first_name() );
+echo wp_strip_all_tags( '' !== $cc_first_name ? sprintf( 'Γεια σας %s,', $cc_first_name ) : 'Γεια σας,' ) . "
 
 ";
 foreach ( $lines as $line ) {

@@ -104,7 +104,7 @@ class Courier_Center_WooCommerce {
         // Επιστροφές: δημιουργία/αναβάθμιση του πίνακα αιτημάτων
         add_action( 'plugins_loaded', array( 'CC_Returns_Repo', 'maybe_upgrade' ) );
         // Επιστροφές: παρακολούθηση status στο ίδιο cron με τις κανονικές αποστολές (ξεχωριστό callback)
-        add_action( 'cc_status_tracking_cron', array( 'CC_Returns_Tracker', 'cron' ), 20 );
+        add_action( 'cc_status_tracking_cron', array( 'CC_Returns_Tracker', 'cron' ), 20, 0 );
         add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
 

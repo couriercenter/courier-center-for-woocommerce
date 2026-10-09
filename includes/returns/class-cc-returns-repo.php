@@ -97,7 +97,12 @@ class CC_Returns_Repo {
 ) $charset;";
 
         dbDelta( $sql );
-        update_option( self::DB_OPTION, self::DB_VERSION );
+
+        // Η έκδοση αποθηκεύεται μόνο αν ο πίνακας υπάρχει πράγματι (αλλιώς νέα προσπάθεια στο επόμενο request)
+        $exists = $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $wpdb->esc_like( $table ) ) );
+        if ( $exists === $table ) {
+            update_option( self::DB_OPTION, self::DB_VERSION );
+        }
     }
 
     /**

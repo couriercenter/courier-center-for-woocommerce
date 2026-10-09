@@ -21,7 +21,8 @@ if ( ! defined( 'ABSPATH' ) ) {
 do_action( 'woocommerce_email_header', $email_heading, $email );
 ?>
 
-<p><?php echo esc_html( sprintf( 'Γεια σας %s,', $order->get_billing_first_name() ) ); ?></p>
+<?php $cc_first_name = trim( (string) $order->get_billing_first_name() ); ?>
+<p><?php echo esc_html( '' !== $cc_first_name ? sprintf( 'Γεια σας %s,', $cc_first_name ) : 'Γεια σας,' ); ?></p>
 
 <p><?php echo esc_html( sprintf( 'Το αίτημα επιστροφής για την παραγγελία #%s απορρίφθηκε.', $order->get_order_number() ) ); ?></p>
 
