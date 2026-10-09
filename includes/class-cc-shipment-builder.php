@@ -70,6 +70,12 @@ class CC_Shipment_Builder {
     public function __construct( WC_Order $order, array $settings = array(), int $parcel_count = 1 ) {
         $this->order        = $order;
         $this->settings     = empty( $settings ) ? $this->load_settings() : $settings;
+        // Custom $settings χωρίς τα νέα κλειδιά: ίδιος κωδικός με το billing_account (όπως σήμερα)
+        foreach ( array( 'requestor_account', 'shipper_account' ) as $key ) {
+            if ( ! isset( $this->settings[ $key ] ) ) {
+                $this->settings[ $key ] = $this->settings['billing_account'] ?? '';
+            }
+        }
         $this->parcel_count = max( 1, $parcel_count );
     }
 

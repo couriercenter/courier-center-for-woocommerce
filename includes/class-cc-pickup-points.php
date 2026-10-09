@@ -51,12 +51,22 @@ class CC_Pickup_Points {
 
         $main_code = self::get_main_point()['code'];
         $points    = array();
+        $seen      = array();
 
         foreach ( $rows as $row ) {
             if ( ! is_array( $row ) || empty( $row['code'] ) ) {
                 continue;
             }
-            $code    = (string) $row['code'];
+            $code = (string) $row['code'];
+            // Παλιές γραμμές: το Test & Auto-fill του κεντρικού γράφει απευθείας στις ρυθμίσεις,
+            // άρα ο έλεγχος της αποθήκευσης δεν τις ξαναβλέπει. Αγνοούμε τον κεντρικό και τα διπλά.
+            if ( '' !== $main_code && $code === $main_code ) {
+                continue;
+            }
+            if ( isset( $seen[ $code ] ) ) {
+                continue;
+            }
+            $seen[ $code ] = true;
             $bill_to = ( isset( $row['bill_to'] ) && 'main' === $row['bill_to'] ) ? 'main' : 'self';
             $label   = isset( $row['label'] ) ? trim( (string) $row['label'] ) : '';
 

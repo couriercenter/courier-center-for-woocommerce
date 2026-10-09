@@ -438,7 +438,7 @@ class CC_Settings {
     // ── Σημεία αποστολής callbacks ───────────────────────────────────────────
 
     public function pickup_section_callback() {
-        echo '<p>Αν έχετε περισσότερα σημεία παραλαβής, το καθένα είναι υποκωδικός κάτω από τον κεντρικό κωδικό σας. Προσθέστε τους εδώ και πατήστε <strong>Test &amp; Auto-fill</strong> σε κάθε γραμμή. Χωρίς υποκωδικούς, όλα τα vouchers βγαίνουν από την Έδρα όπως πάντα.</p>';
+        echo '<p>Αν έχετε περισσότερα σημεία παραλαβής, το καθένα είναι υποκωδικός κάτω από τον κεντρικό κωδικό σας. Προσθέστε τους εδώ και πατήστε <strong>Test &amp; Auto-fill</strong> σε κάθε γραμμή. Χωρίς υποκωδικούς, όλα τα vouchers βγαίνουν από την Έδρα όπως πάντα. Το Test &amp; Auto-fill των υποκωδικών χρησιμοποιεί τα <strong>αποθηκευμένα</strong> credentials — αποθηκεύστε πρώτα τα API Credentials.</p>';
     }
 
     /**
@@ -486,9 +486,10 @@ class CC_Settings {
         jQuery(function($) {
             var $tbody = $('#cc-pickup-points tbody');
             var fields = ['name', 'address', 'postal', 'city', 'phone'];
+            var ccNextRow = 0;
 
             $('#cc-pickup-add').on('click', function() {
-                var html = $('#cc-pickup-point-template').html().replace(/__i__/g, 'n' + Date.now());
+                var html = $('#cc-pickup-point-template').html().replace(/__i__/g, 'n' + Date.now() + '_' + (ccNextRow++));
                 $tbody.append(html);
             });
 
@@ -1074,8 +1075,11 @@ class CC_Settings {
         $details = $api->get_shipment_details( $awb );
 
         if ( is_wp_error( $details ) ) {
-            $api->void_shipment( $awb );
-            return new WP_Error( 'autofill_details', 'Βήμα 2 — Αποτυχία GetShipmentDetails: ' . $details->get_error_message() );
+            $void = $api->void_shipment( $awb );
+            $note = is_wp_error( $void )
+                ? sprintf( ' (η test αποστολή %s ΔΕΝ ακυρώθηκε — ακυρώστε την χειροκίνητα)', $awb )
+                : sprintf( ' (η test αποστολή %s ακυρώθηκε)', $awb );
+            return new WP_Error( 'autofill_details', 'Βήμα 2 — Αποτυχία GetShipmentDetails: ' . $details->get_error_message() . $note );
         }
 
         // Ανακτούμε στοιχεία από ShipmentDetails[0]['ShipmentInfo']
@@ -1083,7 +1087,13 @@ class CC_Settings {
         $shipper = $info['Shipper'] ?? array();
 
         // ── Βήμα 3: Void αποστολής ──────────────────────────────────────────
-        $api->void_shipment( $awb );
+        $void = $api->void_shipment( $awb );
+        if ( is_wp_error( $void ) ) {
+            return new WP_Error(
+                'autofill_void',
+                sprintf( 'Βήμα 3 — Η test αποστολή %s δεν ακυρώθηκε (%s). Ακυρώστε την χειροκίνητα.', $awb, $void->get_error_message() )
+            );
+        }
 
         return array(
             'name'         => (string) ( $shipper['CompanyName'] ?? '' ),

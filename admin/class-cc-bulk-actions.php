@@ -202,7 +202,7 @@ class CC_Bulk_Actions {
         if ( CC_Pickup_Points::has_sub_points() ) {
             foreach ( CC_Pickup_Points::get_points() as $point ) {
                 $actions[ self::CREATE_FROM_POINT_PREFIX . $point['code'] ] =
-                    '🚚 CC — Vouchers από: ' . CC_Pickup_Points::display_label( $point );
+                    '🚚 CC — Vouchers από: ' . esc_html( CC_Pickup_Points::display_label( $point ) );
             }
         }
         $actions['cc_update_statuses']  = '🔄 CC — Ενημέρωση Status';
