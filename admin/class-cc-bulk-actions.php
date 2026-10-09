@@ -15,6 +15,9 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class CC_Bulk_Actions {
 
+    /** Μαζική δημιουργία από συγκεκριμένο σημείο: cc_create_vouchers__<κωδικός>. */
+    const CREATE_FROM_POINT_PREFIX = 'cc_create_vouchers__';
+
     public function __construct() {
         // === BULK ACTIONS ===
         add_filter( 'bulk_actions-woocommerce_page_wc-orders', array( $this, 'register_bulk_actions' ) );
@@ -196,6 +199,12 @@ class CC_Bulk_Actions {
 
     public function register_bulk_actions( $actions ) {
         $actions['cc_create_vouchers']  = '🚚 CC — Δημιουργία Vouchers (Επόμενη Μέρα)';
+        if ( CC_Pickup_Points::has_sub_points() ) {
+            foreach ( CC_Pickup_Points::get_points() as $point ) {
+                $actions[ self::CREATE_FROM_POINT_PREFIX . $point['code'] ] =
+                    '🚚 CC — Vouchers από: ' . CC_Pickup_Points::display_label( $point );
+            }
+        }
         $actions['cc_update_statuses']  = '🔄 CC — Ενημέρωση Status';
         $actions['cc_mass_print']       = '🖨️ CC — Μαζική Εκτύπωση Vouchers';
         $actions['cc_mass_print_boxnow'] = '🟡 CC — Μαζική Εκτύπωση BOX NOW';
@@ -203,6 +212,21 @@ class CC_Bulk_Actions {
     }
 
     public function handle_bulk_action( $redirect_to, $action, $order_ids ) {
+        if ( 0 === strpos( (string) $action, self::CREATE_FROM_POINT_PREFIX ) ) {
+            $code = substr( $action, strlen( self::CREATE_FROM_POINT_PREFIX ) );
+            if ( ! CC_Pickup_Points::get_point( $code ) ) {
+                // Οι ρυθμίσεις άλλαξαν μετά τη φόρτωση της λίστας
+                return $this->redirect_with_result( $redirect_to, array(
+                    'type'    => 'create',
+                    'success' => 0,
+                    'failed'  => count( $order_ids ),
+                    'skipped' => 0,
+                    'errors'  => array( sprintf( 'Το σημείο αποστολής %s δεν υπάρχει πια στις ρυθμίσεις — ανανέωσε τη σελίδα και ξαναδοκίμασε.', $code ) ),
+                    'total'   => count( $order_ids ),
+                ) );
+            }
+            return $this->bulk_create_vouchers( $redirect_to, $order_ids, $code );
+        }
         if ( $action === 'cc_create_vouchers' ) {
             return $this->bulk_create_vouchers( $redirect_to, $order_ids );
         }
@@ -474,8 +498,11 @@ class CC_Bulk_Actions {
     // BULK CREATE VOUCHERS
     // =========================================================================
 
-    private function bulk_create_vouchers( $redirect_to, $order_ids ) {
+    private function bulk_create_vouchers( $redirect_to, $order_ids, $point_code = null ) {
         if ( empty( $order_ids ) ) { return $redirect_to; }
+        if ( null === $point_code ) {
+            $point_code = CC_Pickup_Points::get_default_code();
+        }
 
         // Επέκταση χρόνου εκτέλεσης για μαζικές δημιουργίες (αποφυγή 504)
         @set_time_limit( 300 );
@@ -516,6 +543,8 @@ class CC_Bulk_Actions {
             }
 
             $builder = new CC_Shipment_Builder( $order );
+            $check = $builder->use_pickup_point( $point_code );
+            if ( is_wp_error( $check ) ) { $failed++; $errors[] = "#$order_id: " . $check->get_error_message(); continue; }
             $check = $builder->validate_settings();
             if ( is_wp_error( $check ) ) { $failed++; $errors[] = "#$order_id: " . $check->get_error_message(); continue; }
             $check = $builder->validate_order();
@@ -551,6 +580,7 @@ class CC_Bulk_Actions {
                 $order->delete_meta_data( '_cc_boxnow_outbound' );
             }
 
+            $builder->save_pickup_point_meta();
             $order->update_meta_data( '_cc_voucher_number', $voucher_number );
             $order->update_meta_data( '_cc_tracking_number', $tracking_number );
             $order->update_meta_data( '_cc_service_type', 'next_day' );
@@ -564,7 +594,7 @@ class CC_Bulk_Actions {
 
             $order->save();
 
-            $order->add_order_note( '✅ CC voucher (Bulk): ' . $voucher_number . ' | Επόμενη Μέρα' );
+            $order->add_order_note( '✅ CC voucher (Bulk): ' . $voucher_number . ' | Επόμενη Μέρα' . $builder->pickup_point_note() );
             $success++;
             usleep( 100000 ); // 100ms αντί 300ms για αποφυγή timeout
         }
