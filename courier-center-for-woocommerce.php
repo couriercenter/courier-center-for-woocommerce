@@ -74,6 +74,7 @@ class Courier_Center_WooCommerce {
     private function includes() {
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-api.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-city-scope.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pickup-points.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
