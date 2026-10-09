@@ -41,13 +41,20 @@ class CC_Manifest_Page {
             $selected_date = $today;
         }
 
+        $selected_account = CC_Pickup_Points::normalize_code(
+            isset( $_GET['manifest_account'] ) ? sanitize_text_field( wp_unslash( $_GET['manifest_account'] ) ) : ''
+        );
+
         $download_url = wp_nonce_url(
-            admin_url( 'admin-post.php?action=cc_download_manifest&date=' . urlencode( $selected_date ) ),
+            admin_url(
+                'admin-post.php?action=cc_download_manifest&date=' . urlencode( $selected_date )
+                . ( '' !== $selected_account ? '&account=' . urlencode( $selected_account ) : '' )
+            ),
             'cc_download_manifest'
         );
 
         // Count vouchers for this date from WC orders
-        $vouchers_count = $this->count_vouchers_for_date( $selected_date );
+        $vouchers_count = $this->count_vouchers_for_date( $selected_date, $selected_account );
         ?>
         <div class="wrap">
             <h1>🚚 Manifest Παραλαβής</h1>
@@ -155,6 +162,19 @@ class CC_Manifest_Page {
                                    value="<?php echo esc_attr( $selected_date ); ?>"
                                    max="<?php echo esc_attr( date( 'Y-m-d', strtotime( '+1 day' ) ) ); ?>">
                         </div>
+                        <?php if ( CC_Pickup_Points::has_sub_points() ) : ?>
+                        <div>
+                            <label for="manifest_account">Σημείο:</label>
+                            <select id="manifest_account" name="manifest_account">
+                                <option value="">Όλα τα σημεία</option>
+                                <?php foreach ( CC_Pickup_Points::get_points() as $point ) : ?>
+                                    <option value="<?php echo esc_attr( $point['code'] ); ?>" <?php selected( $selected_account, $point['code'] ); ?>>
+                                        <?php echo esc_html( CC_Pickup_Points::display_label( $point ) ); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <?php endif; ?>
                         <div>
                             <button type="submit" class="button">Ενημέρωση</button>
                         </div>
@@ -209,8 +229,12 @@ class CC_Manifest_Page {
 
         $date = isset( $_GET['date'] ) ? sanitize_text_field( $_GET['date'] ) : date( 'Y-m-d' );
 
+        $account = CC_Pickup_Points::normalize_code(
+            isset( $_GET['account'] ) ? sanitize_text_field( wp_unslash( $_GET['account'] ) ) : ''
+        );
+
         $api = new CC_API();
-        $pdf = $api->get_manifest( $date );
+        $pdf = $api->get_manifest( $date, $account );
 
         if ( is_wp_error( $pdf ) ) {
             wp_die( 'Σφάλμα λήψης manifest: ' . esc_html( $pdf->get_error_message() ) );
@@ -221,7 +245,7 @@ class CC_Manifest_Page {
 
         nocache_headers();
         header( 'Content-Type: application/pdf' );
-        header( 'Content-Disposition: ' . $disposition . '; filename="manifest-' . $date . '.pdf"' );
+        header( 'Content-Disposition: ' . $disposition . '; filename="manifest-' . $date . ( '' !== $account ? '-' . $account : '' ) . '.pdf"' );
         header( 'Content-Length: ' . strlen( $pdf ) );
         echo $pdf;
         exit;
@@ -230,7 +254,7 @@ class CC_Manifest_Page {
     /**
      * Count WooCommerce orders that have CC voucher with shipment_date = given date
      */
-    private function count_vouchers_for_date( $date ) {
+    private function count_vouchers_for_date( $date, $account = '' ) {
         $args = array(
             'limit'      => -1,
             'return'     => 'ids',
@@ -247,6 +271,19 @@ class CC_Manifest_Page {
                 ),
             ),
         );
+
+        if ( '' !== $account ) {
+            if ( CC_Pickup_Points::get_main_point()['code'] === $account ) {
+                // Η Έδρα μετράει και τα vouchers πριν υπάρξουν σημεία (χωρίς meta)
+                $args['meta_query'][] = array(
+                    'relation' => 'OR',
+                    array( 'key' => '_cc_pickup_point', 'value' => $account ),
+                    array( 'key' => '_cc_pickup_point', 'compare' => 'NOT EXISTS' ),
+                );
+            } else {
+                $args['meta_query'][] = array( 'key' => '_cc_pickup_point', 'value' => $account );
+            }
+        }
 
         $orders = wc_get_orders( $args );
         return is_array( $orders ) ? count( $orders ) : 0;

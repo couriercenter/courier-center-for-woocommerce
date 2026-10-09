@@ -253,10 +253,11 @@ class CC_API {
     /**
      * Get manifest PDF for a specific date
      *
-     * @param string $date Ημερομηνία σε format YYYY-MM-DD
+     * @param string $date    Ημερομηνία σε format YYYY-MM-DD
+     * @param string $account Κωδικός σημείου (κενό = όλα)
      * @return string|WP_Error Binary PDF content
      */
-    public function get_manifest( $date ) {
+    public function get_manifest( $date, $account = '' ) {
         if ( empty( $date ) ) {
             return new WP_Error( 'missing_date', 'Δεν δόθηκε ημερομηνία' );
         }
@@ -271,6 +272,11 @@ class CC_API {
             'context' => $this->get_context(),
             'Date'    => $date,
         );
+
+        // Μόνο οι αποστολές ενός σημείου (το API φιλτράρει με τον κωδικό του αποστολέα)
+        if ( '' !== (string) $account ) {
+            $payload['CustomerAccount'] = (string) $account;
+        }
 
         $url = $this->api_url . '/Manifest';
 
