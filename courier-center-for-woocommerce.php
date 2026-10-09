@@ -77,6 +77,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pickup-points.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-rules.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-repo.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-settings.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
@@ -119,6 +120,7 @@ class Courier_Center_WooCommerce {
         $this->bug_report = new CC_Bug_Report();
         $this->docs_page = new CC_Docs_Page();
         new CC_BoxNow_Checkout();
+        new CC_Returns_Settings();
         new CC_Updater();
     }
 

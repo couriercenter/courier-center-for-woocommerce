@@ -1439,7 +1439,7 @@ class CC_Settings {
      * @return string[]
      */
     public static function plugin_option_names() {
-        return array(
+        return array_merge( array(
             'cc_wc_user_alias',
             'cc_wc_credential_value',
             'cc_wc_api_key',
@@ -1462,7 +1462,7 @@ class CC_Settings {
             'cc_wc_auto_create_enabled',
             'cc_wc_auto_create_status',
             'cc_wc_handled_shipping_methods',
-        );
+        ), CC_Returns_Settings::option_names() );
     }
 
     /**
