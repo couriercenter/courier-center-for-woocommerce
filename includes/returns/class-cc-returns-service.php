@@ -17,6 +17,7 @@ class CC_Returns_Service {
 
     const LOG_SOURCE = 'cc-returns';
     const REASON_MAX = 500;
+    const ERROR_MAX  = 300; // χαρακτήρες για last_error / log
 
     const MSG_FORBIDDEN   = 'Μη εξουσιοδοτημένη πρόσβαση στην παραγγελία.';
     const MSG_NOT_PENDING = 'Το αίτημα έχει ήδη εξεταστεί.';
@@ -272,9 +273,15 @@ class CC_Returns_Service {
     // ── Δημιουργία ───────────────────────────────────────────────────────────
 
     /**
-     * approved|creation_failed → creating (ατομικά) → API. Σε needs_verification γίνεται πρώτα verify().
+     * approved|creation_failed → creating (ατομικά) → API.
      *
-     * @return array|WP_Error Η γραμμή μετά το αποτέλεσμα, ή WP_Error (busy / αποτυχία / αβέβαιο).
+     * - needs_verification: ΜΟΝΟ verify(). «Δεν βρέθηκε» → creation_failed + WP_Error, χωρίς create στην
+     *   ίδια κλήση (η επόμενη ρητή create() ξεκινά πάλι με αναζήτηση token).
+     * - creation_failed με attempts > 0: πριν από την επανάληψη αναζήτηση με το token, γιατί μια προηγούμενη
+     *   προσπάθεια (π.χ. timeout) μπορεί να πέτυχε στο API αργότερα. Βρέθηκε → created χωρίς create·
+     *   «No shipments found» → κανονική επανάληψη· άλλο σφάλμα → needs_verification χωρίς create.
+     *
+     * @return array|WP_Error Η γραμμή όταν η αποστολή υπάρχει, αλλιώς WP_Error (busy / αποτυχία / αβέβαιο).
      */
     public function create( $id ) {
         $this->release_stale_locks();
@@ -285,18 +292,21 @@ class CC_Returns_Service {
         }
 
         if ( CC_Returns_Rules::ST_VERIFY === $row['status'] ) {
-            $res = $this->verify( $id );
-            if ( is_wp_error( $res ) || CC_Returns_Rules::ST_CREATED === $res['status'] ) {
-                return $res;
+            return $this->verify( $id );
+        }
+
+        if ( CC_Returns_Rules::ST_FAILED === $row['status'] && (int) $row['attempts'] > 0 ) {
+            $checked = $this->recheck_before_retry( $row );
+            if ( null !== $checked ) {
+                return $checked;
             }
-            // «Δεν βρέθηκε» → creation_failed: επιτρέπεται νέα προσπάθεια
         }
 
         $claimed = CC_Returns_Repo::transition(
             $id,
             array( CC_Returns_Rules::ST_APPROVED, CC_Returns_Rules::ST_FAILED ),
             CC_Returns_Rules::ST_CREATING,
-            array( 'locked_at' => current_time( 'mysql' ), 'attempts' => '+1' )
+            array( 'locked_at' => self::now_gmt(), 'attempts' => '+1' )
         );
         if ( ! $claimed ) {
             return new WP_Error( 'cc_return_busy', self::MSG_BUSY );
@@ -308,7 +318,9 @@ class CC_Returns_Service {
     /**
      * Αναζήτηση της αποστολής με Identifier = reference_token (μόνο σε needs_verification).
      *
-     * @return array|WP_Error Η γραμμή (created ή creation_failed), ή WP_Error αν μένει σε έλεγχο.
+     * @return array|WP_Error Η γραμμή (shipment_created), ή WP_Error: cc_return_creation_failed
+     *                        (δεν βρέθηκε → creation_failed, επιτρέπεται νέα create()) ή
+     *                        cc_return_unverified (μένει needs_verification).
      */
     public function verify( $id ) {
         $row = CC_Returns_Repo::get( $id );
@@ -316,56 +328,24 @@ class CC_Returns_Service {
             return new WP_Error( 'cc_return_not_verifiable', 'Το αίτημα δεν βρίσκεται σε κατάσταση ελέγχου.' );
         }
 
-        $res = $this->api->get_shipment_details( $row['reference_token'] );
-        if ( is_wp_error( $res ) || ! is_array( $res ) ) {
-            return $this->still_unverified( $row, is_wp_error( $res ) ? $res->get_error_message() : 'Μη έγκυρη απάντηση' );
+        $look = $this->lookup_token( $row );
+        if ( 'found' === $look['state'] ) {
+            return $this->mark_created( $row, array( CC_Returns_Rules::ST_VERIFY ), $look['fields'], $look['warnings'] );
         }
-
-        if ( ! self::details_ok( $res ) ) {
-            // Μόνο το ρητό «No shipments found» (ή Success χωρίς αποτελέσματα) σημαίνει «δεν υπάρχει»
-            $msg = self::api_error_text( $res );
-            if ( false === stripos( $msg, 'No shipments found' ) ) {
-                return $this->still_unverified( $row, $msg );
-            }
-            return $this->fail( $row, 'Δεν βρέθηκε αποστολή για το αίτημα· μπορείτε να δοκιμάσετε ξανά τη δημιουργία.', array( CC_Returns_Rules::ST_VERIFY ) );
+        if ( 'none' === $look['state'] ) {
+            return $this->fail( $row, $look['message'], array( CC_Returns_Rules::ST_VERIFY ) );
         }
-
-        // Μόνο μη ακυρωμένες αποστολές (CollectionStatus 14 = Cancel)
-        $alive = array();
-        foreach ( $res['ShipmentDetails'] as $detail ) {
-            $info = isset( $detail['ShipmentInfo'] ) && is_array( $detail['ShipmentInfo'] ) ? $detail['ShipmentInfo'] : array();
-            if ( '' !== (string) ( isset( $info['ShipmentAwb'] ) ? $info['ShipmentAwb'] : '' )
-                && CC_Returns_Rules::COLLECTION_CANCELLED !== (int) ( isset( $info['CollectionStatus'] ) ? $info['CollectionStatus'] : 0 ) ) {
-                $alive[] = $info;
-            }
-        }
-        if ( ! $alive ) {
-            return $this->fail( $row, 'Βρέθηκαν μόνο ακυρωμένες αποστολές για το αίτημα· μπορείτε να δοκιμάσετε ξανά τη δημιουργία.', array( CC_Returns_Rules::ST_VERIFY ) );
-        }
-
-        $info     = $alive[0];
-        $warnings = array();
-        if ( count( $alive ) > 1 ) {
-            $warnings[] = sprintf( 'Βρέθηκαν %d αποστολές με το ίδιο token', count( $alive ) );
-        }
-        $rsn = CC_Returns_Rules::METHOD_BOXNOW === $row['method'] ? (string) ( isset( $info['Reference4'] ) ? $info['Reference4'] : '' ) : '';
-
-        return $this->mark_created( $row, array( CC_Returns_Rules::ST_VERIFY ), array(
-            'return_awb'              => (string) $info['ShipmentAwb'],
-            'return_shipment_number'  => $rsn,
-            'inbound_shipment_number' => (string) ( isset( $info['InboundAwb'] ) ? $info['InboundAwb'] : '' ),
-            'shipment_master_id'      => (string) ( isset( $info['ShipmentId'] ) ? $info['ShipmentId'] : '' ),
-        ), $warnings );
+        return $this->still_unverified( $row, $look['message'] );
     }
 
     /**
-     * creating με locked_at παλαιότερο από LOCK_TTL → needs_verification (το request που
+     * creating με locked_at (GMT) παλαιότερο από LOCK_TTL → needs_verification (το request που
      * κρατούσε το κλείδωμα πιθανότατα πέθανε· η αποστολή μπορεί να έχει δημιουργηθεί).
      *
      * @return int Πόσα αιτήματα απελευθερώθηκαν.
      */
     public function release_stale_locks() {
-        $cutoff = date( 'Y-m-d H:i:s', strtotime( current_time( 'mysql' ) ) - CC_Returns_Repo::LOCK_TTL );
+        $cutoff = gmdate( 'Y-m-d H:i:s', time() - CC_Returns_Repo::LOCK_TTL );
         $count  = 0;
         foreach ( CC_Returns_Repo::query( array( 'status' => CC_Returns_Rules::ST_CREATING, 'limit' => 200 ) ) as $row ) {
             if ( ! empty( $row['locked_at'] ) && $row['locked_at'] >= $cutoff ) {
@@ -466,7 +446,81 @@ class CC_Returns_Service {
         ) );
     }
 
-    /** → shipment_created (ατομικά από $from). Hook/note μόνο αν η μετάβαση έγινε εδώ. */
+    /**
+     * GetShipmentDetails( reference_token ).
+     *
+     * @return array state 'found' (fields, warnings) | 'none' (message) | 'error' (message)
+     */
+    private function lookup_token( array $row ) {
+        $res = $this->api->get_shipment_details( $row['reference_token'] );
+        if ( is_wp_error( $res ) || ! is_array( $res ) ) {
+            return array( 'state' => 'error', 'message' => is_wp_error( $res ) ? $res->get_error_message() : 'Μη έγκυρη απάντηση του API' );
+        }
+
+        if ( ! self::details_ok( $res ) ) {
+            // Μόνο το ρητό «No shipments found» (ή Success χωρίς αποτελέσματα) σημαίνει «δεν υπάρχει»
+            $msg = self::api_error_text( $res );
+            if ( false === stripos( $msg, 'No shipments found' ) ) {
+                return array( 'state' => 'error', 'message' => $msg );
+            }
+            return array( 'state' => 'none', 'message' => 'Δεν βρέθηκε αποστολή για το αίτημα· μπορείτε να δοκιμάσετε ξανά τη δημιουργία.' );
+        }
+
+        // Μόνο μη ακυρωμένες αποστολές (CollectionStatus 14 = Cancel)
+        $alive = array();
+        foreach ( $res['ShipmentDetails'] as $detail ) {
+            $info = isset( $detail['ShipmentInfo'] ) && is_array( $detail['ShipmentInfo'] ) ? $detail['ShipmentInfo'] : array();
+            if ( '' !== (string) ( isset( $info['ShipmentAwb'] ) ? $info['ShipmentAwb'] : '' )
+                && CC_Returns_Rules::COLLECTION_CANCELLED !== (int) ( isset( $info['CollectionStatus'] ) ? $info['CollectionStatus'] : 0 ) ) {
+                $alive[] = $info;
+            }
+        }
+        if ( ! $alive ) {
+            return array( 'state' => 'none', 'message' => 'Βρέθηκαν μόνο ακυρωμένες αποστολές για το αίτημα· μπορείτε να δοκιμάσετε ξανά τη δημιουργία.' );
+        }
+
+        $info     = $alive[0];
+        $warnings = array();
+        if ( count( $alive ) > 1 ) {
+            $warnings[] = sprintf( 'Βρέθηκαν %d αποστολές με το ίδιο token', count( $alive ) );
+        }
+        return array(
+            'state'    => 'found',
+            'warnings' => $warnings,
+            'fields'   => array(
+                'return_awb'              => (string) $info['ShipmentAwb'],
+                'return_shipment_number'  => CC_Returns_Rules::METHOD_BOXNOW === $row['method'] ? (string) ( isset( $info['Reference4'] ) ? $info['Reference4'] : '' ) : '',
+                'inbound_shipment_number' => (string) ( isset( $info['InboundAwb'] ) ? $info['InboundAwb'] : '' ),
+                'shipment_master_id'      => (string) ( isset( $info['ShipmentId'] ) ? $info['ShipmentId'] : '' ),
+            ),
+        );
+    }
+
+    /**
+     * Πριν από επανάληψη από creation_failed: υπάρχει ήδη αποστολή με το token;
+     *
+     * @return array|WP_Error|null null = καμία αποστολή, προχώρα σε create.
+     */
+    private function recheck_before_retry( array $row ) {
+        $look = $this->lookup_token( $row );
+        if ( 'found' === $look['state'] ) {
+            return $this->mark_created( $row, array( CC_Returns_Rules::ST_FAILED ), $look['fields'], $look['warnings'] );
+        }
+        if ( 'none' === $look['state'] ) {
+            return null;
+        }
+        $text = self::clip( 'Ο έλεγχος ύπαρξης πριν από την επανάληψη δεν ολοκληρώθηκε: ' . $look['message'] );
+        if ( CC_Returns_Repo::transition( $row['id'], array( CC_Returns_Rules::ST_FAILED ), CC_Returns_Rules::ST_VERIFY, array( 'last_error' => $text, 'locked_at' => null ) ) ) {
+            $this->log( 'warning', sprintf( 'Επιστροφή #%d (παραγγελία %d, %s): %s', $row['id'], $row['order_id'], $row['method'], $text ) );
+        }
+        return new WP_Error( 'cc_return_unverified', $text );
+    }
+
+    /**
+     * → shipment_created (ατομικά από $from). Note/hook/log μόνο αν η μετάβαση έγινε εδώ.
+     * Αν η αποστολή μόλις δημιουργήθηκε (from creating) αλλά το αίτημα άλλαξε κατάσταση στο μεταξύ,
+     * το AWB καταγράφεται σε log επιπέδου error ώστε ένα πιθανό διπλό να εντοπίζεται.
+     */
     private function mark_created( array $row, array $from, array $fields, array $warnings = array() ) {
         if ( CC_Returns_Rules::METHOD_BOXNOW === $row['method'] && '' === $fields['return_shipment_number'] ) {
             $warnings[] = self::MSG_NO_RSN;
@@ -485,14 +539,32 @@ class CC_Returns_Service {
                 }
             }
             do_action( 'cc_return_shipment_created', $row['id'] );
+            return CC_Returns_Repo::get( $row['id'] );
         }
-        $fresh = CC_Returns_Repo::get( $row['id'] );
-        return $fresh ? $fresh : new WP_Error( 'cc_return_not_found', 'Το αίτημα επιστροφής δεν βρέθηκε.' );
+
+        $fresh  = CC_Returns_Repo::get( $row['id'] );
+        $status = $fresh ? $fresh['status'] : '';
+        if ( in_array( CC_Returns_Rules::ST_CREATING, $from, true ) ) {
+            $this->log( 'error', sprintf(
+                'Επιστροφή #%d (παραγγελία %d, %s): η αποστολή AWB %s%s δημιουργήθηκε στο API αλλά το αίτημα είχε ήδη αλλάξει κατάσταση (%s) και δεν αποθηκεύτηκε — έλεγχος για διπλό AWB.',
+                $row['id'],
+                $row['order_id'],
+                $row['method'],
+                $fields['return_awb'],
+                '' !== $fields['return_shipment_number'] ? ' / BOX NOW ' . $fields['return_shipment_number'] : '',
+                $status
+            ) );
+        }
+        if ( $fresh && CC_Returns_Rules::ST_CREATED === $status ) {
+            return $fresh; // ολοκληρώθηκε από άλλο request
+        }
+        return new WP_Error( 'cc_return_conflict', 'Η κατάσταση του αιτήματος άλλαξε κατά τη δημιουργία· ελέγξτε το αίτημα.' );
     }
 
     /** → creation_failed με το μήνυμα (order note + log). Επιστρέφει πάντα WP_Error. */
     private function fail( array $row, $message, array $from = array( CC_Returns_Rules::ST_CREATING ), $api_code = '' ) {
-        $moved = CC_Returns_Repo::transition( $row['id'], $from, CC_Returns_Rules::ST_FAILED, array(
+        $message = self::clip( $message );
+        $moved   = CC_Returns_Repo::transition( $row['id'], $from, CC_Returns_Rules::ST_FAILED, array(
             'last_error' => $message,
             'locked_at'  => null,
         ) );
@@ -505,23 +577,19 @@ class CC_Returns_Service {
 
     /** creating → needs_verification και αμέσως verify() (ποτέ δεύτερο create). */
     private function to_verification( array $row, $message ) {
+        $message = self::clip( $message );
         CC_Returns_Repo::transition( $row['id'], array( CC_Returns_Rules::ST_CREATING ), CC_Returns_Rules::ST_VERIFY, array(
             'last_error' => $message,
             'locked_at'  => null,
         ) );
         $this->log( 'warning', sprintf( 'Επιστροφή #%d (παραγγελία %d, %s): %s', $row['id'], $row['order_id'], $row['method'], $message ) );
-
-        $res = $this->verify( $row['id'] );
-        if ( is_array( $res ) && CC_Returns_Rules::ST_FAILED === $res['status'] ) {
-            return new WP_Error( 'cc_return_creation_failed', (string) $res['last_error'] );
-        }
-        return $res;
+        return $this->verify( $row['id'] );
     }
 
-    /** Ο έλεγχος δεν κατέληξε: μένει needs_verification. */
+    /** Ο έλεγχος δεν κατέληξε: μένει needs_verification (το last_error γράφεται μόνο αν είναι ακόμα εκεί). */
     private function still_unverified( array $row, $message ) {
-        $text = 'Ο έλεγχος ύπαρξης της αποστολής δεν ολοκληρώθηκε: ' . $message;
-        CC_Returns_Repo::update( $row['id'], array( 'last_error' => $text ) );
+        $text = self::clip( 'Ο έλεγχος ύπαρξης της αποστολής δεν ολοκληρώθηκε: ' . $message );
+        CC_Returns_Repo::transition( $row['id'], array( CC_Returns_Rules::ST_VERIFY ), CC_Returns_Rules::ST_VERIFY, array( 'last_error' => $text ) );
         $this->log( 'warning', sprintf( 'Επιστροφή #%d (παραγγελία %d, %s): %s', $row['id'], $row['order_id'], $row['method'], $text ) );
         return new WP_Error( 'cc_return_unverified', $text );
     }
@@ -599,6 +667,17 @@ class CC_Returns_Service {
 
     private static function new_token() {
         return 'RR' . strtoupper( bin2hex( random_bytes( 6 ) ) );
+    }
+
+    /** Το locked_at γράφεται/συγκρίνεται σε GMT (η τοπική ώρα πηδά με τη θερινή ώρα). */
+    private static function now_gmt() {
+        return current_time( 'mysql', true );
+    }
+
+    /** Τα μηνύματα σφάλματος (π.χ. «HTTP 500: <body>») κόβονται πριν αποθηκευτούν/καταγραφούν. */
+    private static function clip( $text ) {
+        $text = (string) $text;
+        return mb_strlen( $text, 'UTF-8' ) > self::ERROR_MAX ? mb_substr( $text, 0, self::ERROR_MAX, 'UTF-8' ) . '…' : $text;
     }
 
     private function note( array $row, $text ) {
