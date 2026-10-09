@@ -338,6 +338,11 @@ class CC_Returns_Service {
         return $this->still_unverified( $row, $look['message'] );
     }
 
+    /** Ανανέωση του status της αποστολής επιστροφής (ο κώδικας βρίσκεται στον CC_Returns_Tracker). */
+    public function refresh_tracking( $id ) {
+        return ( new CC_Returns_Tracker( $this->api ) )->refresh( $id );
+    }
+
     /**
      * creating με locked_at (GMT) παλαιότερο από LOCK_TTL → needs_verification (το request που
      * κρατούσε το κλείδωμα πιθανότατα πέθανε· η αποστολή μπορεί να έχει δημιουργηθεί).

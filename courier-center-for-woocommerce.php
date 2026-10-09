@@ -80,6 +80,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-settings.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-return-payload.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-service.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
@@ -98,6 +99,8 @@ class Courier_Center_WooCommerce {
     private function init_hooks() {
         // Επιστροφές: δημιουργία/αναβάθμιση του πίνακα αιτημάτων
         add_action( 'plugins_loaded', array( 'CC_Returns_Repo', 'maybe_upgrade' ) );
+        // Επιστροφές: παρακολούθηση status στο ίδιο cron με τις κανονικές αποστολές (ξεχωριστό callback)
+        add_action( 'cc_status_tracking_cron', array( 'CC_Returns_Tracker', 'cron' ), 20 );
         add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
 
