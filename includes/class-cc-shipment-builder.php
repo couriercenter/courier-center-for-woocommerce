@@ -58,6 +58,13 @@ class CC_Shipment_Builder {
     private static $voucher_locks = array();
 
     /**
+     * Το σημείο αποστολής που επιλέχθηκε με use_pickup_point() (null = Έδρα).
+     *
+     * @var array|null
+     */
+    private $pickup_point = null;
+
+    /**
      * Constructor
      */
     public function __construct( WC_Order $order, array $settings = array(), int $parcel_count = 1 ) {
@@ -185,6 +192,9 @@ class CC_Shipment_Builder {
             'credential_value' => get_option( 'cc_wc_credential_value', '' ),
             'api_key'          => get_option( 'cc_wc_api_key', '' ),
             'billing_account'  => get_option( 'cc_wc_billing_account', '' ),
+            // Χωρίς υποκωδικό: Requestor και Shipper είναι ο κεντρικός κωδικός (όπως πάντα)
+            'requestor_account' => get_option( 'cc_wc_billing_account', '' ),
+            'shipper_account'   => get_option( 'cc_wc_billing_account', '' ),
             'shipper_name'     => get_option( 'cc_wc_shipper_name', '' ),
             'shipper_address'  => get_option( 'cc_wc_shipper_address', '' ),
             'shipper_postal'   => get_option( 'cc_wc_shipper_postal_code', '' ),
@@ -195,11 +205,101 @@ class CC_Shipment_Builder {
     }
 
     /**
+     * Βγάζει το voucher από άλλο σημείο αποστολής (υποκωδικό). Ο κωδικός του
+     * σημείου πάει στο Shipper και ο κωδικός χρέωσης στο Requestor· τα στοιχεία
+     * και ο σταθμός αποστολέα (για 111/211) παίρνονται από το σημείο.
+     *
+     * Κενός κωδικός ή ο κωδικός της Έδρας: καμία αλλαγή.
+     *
+     * @param string $code
+     * @return true|WP_Error
+     */
+    public function use_pickup_point( $code ) {
+        $code = trim( (string) $code );
+        if ( '' === $code || CC_Pickup_Points::get_main_point()['code'] === $code ) {
+            return true;
+        }
+
+        $point = CC_Pickup_Points::get_point( $code );
+        if ( ! $point ) {
+            return new WP_Error(
+                'unknown_pickup_point',
+                sprintf( 'Το σημείο αποστολής %s δεν υπάρχει στις ρυθμίσεις.', $code )
+            );
+        }
+
+        $this->pickup_point                  = $point;
+        $this->settings['requestor_account'] = $point['requestor'];
+        $this->settings['shipper_account']   = $point['code'];
+        $this->settings['shipper_name']      = $point['name'];
+        $this->settings['shipper_address']   = $point['address'];
+        $this->settings['shipper_postal']    = $point['postal'];
+        $this->settings['shipper_city']      = $point['city'];
+        // Το API βάζει έτσι κι αλλιώς το τηλέφωνο του υποκωδικού· αν το autofill δεν
+        // έφερε τηλέφωνο, το τηλέφωνο της Έδρας αρκεί για να περάσει ο έλεγχος.
+        if ( '' !== $point['phone'] ) {
+            $this->settings['shipper_phone'] = $point['phone'];
+        }
+        $this->settings['shipper_station'] = CC_City_Scope::get_station_for_postcode( $point['postal'] );
+
+        return true;
+    }
+
+    public function get_shipper_account() {
+        return (string) $this->settings['shipper_account'];
+    }
+
+    public function get_requestor_account() {
+        return (string) $this->settings['requestor_account'];
+    }
+
+    /**
+     * Καταγράφει στην παραγγελία από πού βγήκε και πού χρεώνεται το voucher.
+     * Γράφεται σε κάθε δημιουργία, άρα η επαναδημιουργία μετά από ακύρωση το αντικαθιστά.
+     * Δεν κάνει save — το κάνει ο caller μαζί με τα υπόλοιπα meta.
+     */
+    public function save_pickup_point_meta() {
+        $this->order->update_meta_data( '_cc_pickup_point', $this->get_shipper_account() );
+        $this->order->update_meta_data( '_cc_requestor_account', $this->get_requestor_account() );
+    }
+
+    /**
+     * Κομμάτι για το order note — μόνο όταν το κατάστημα έχει υποκωδικούς.
+     *
+     * @return string
+     */
+    public function pickup_point_note() {
+        if ( ! CC_Pickup_Points::has_sub_points() ) {
+            return '';
+        }
+        $code  = $this->get_shipper_account();
+        $point = CC_Pickup_Points::get_point( $code );
+        $label = $point ? CC_Pickup_Points::display_label( $point ) : $code;
+
+        return ' | Σημείο: ' . $label;
+    }
+
+    /**
      * Validate that all required settings are present
      *
      * @return true|WP_Error
      */
     public function validate_settings() {
+        // Υποκωδικός που δεν έχει περάσει από Test & Auto-fill
+        if ( $this->pickup_point ) {
+            foreach ( array( 'shipper_name', 'shipper_address', 'shipper_postal', 'shipper_city' ) as $key ) {
+                if ( empty( $this->settings[ $key ] ) ) {
+                    return new WP_Error(
+                        'pickup_point_incomplete',
+                        sprintf(
+                            'Το σημείο αποστολής «%s» δεν έχει στοιχεία αποστολέα — κάνε Test & Auto-fill στις ρυθμίσεις.',
+                            CC_Pickup_Points::display_label( $this->pickup_point )
+                        )
+                    );
+                }
+            }
+        }
+
         $required = array(
             'user_alias'       => 'User Alias',
             'credential_value' => 'Credential Value',
@@ -345,10 +445,10 @@ class CC_Shipment_Builder {
             'shipmentDate' => date( 'Y-m-d' ),
             'comments'     => $this->build_comments(),
             'Requestor'    => array(
-                'CarrierBillingAccount' => $this->settings['billing_account'],
+                'CarrierBillingAccount' => $this->settings['requestor_account'],
             ),
             'Shipper'      => array(
-                'CarrierBillingAccount' => $this->settings['billing_account'],
+                'CarrierBillingAccount' => $this->settings['shipper_account'],
                 'CompanyName'           => $this->settings['shipper_name'],
                 'ContactName'           => $this->settings['shipper_name'],
                 'Address'               => $this->settings['shipper_address'],
