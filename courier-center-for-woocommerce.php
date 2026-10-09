@@ -81,6 +81,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-return-payload.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-service.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-tracker.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-account.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
@@ -126,6 +127,7 @@ class Courier_Center_WooCommerce {
         $this->docs_page = new CC_Docs_Page();
         new CC_BoxNow_Checkout();
         new CC_Returns_Settings();
+        new CC_Returns_Account(); // My Account: αίτημα επιστροφής (τρέχει και στο frontend)
         new CC_Updater();
     }
 

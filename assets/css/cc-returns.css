@@ -1,0 +1,12 @@
+/* Επιστροφές (My Account) — ελάχιστο, ουδέτερο προς το θέμα */
+.cc-returns { margin-top: 2em; }
+.cc-return-request { margin-bottom: 1.5em; padding-bottom: 1em; border-bottom: 1px solid rgba(0, 0, 0, .1); }
+.cc-return-meta { list-style: none; margin: 0 0 .75em; padding: 0; }
+.cc-return-code { font-size: 1.2em; font-weight: 600; padding: .1em .4em; margin-right: .5em; user-select: all; }
+.cc-return-form fieldset { border: 0; margin: 0 0 1em; padding: 0; }
+.cc-return-form legend { font-weight: 600; margin-bottom: .5em; }
+.cc-return-form input[type="number"] { width: 5em; }
+.cc-return-form input[type="text"],
+.cc-return-form input[type="tel"],
+.cc-return-form textarea { width: 100%; max-width: 30em; }
+.cc-return-error { color: #b32d2e; font-weight: 600; }
