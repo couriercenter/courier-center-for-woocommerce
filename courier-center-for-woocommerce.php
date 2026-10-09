@@ -79,6 +79,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-repo.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-settings.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-return-payload.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-service.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
