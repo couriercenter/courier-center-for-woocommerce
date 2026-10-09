@@ -16,6 +16,7 @@ class CC_Settings {
         add_action( 'admin_init', array( $this, 'register_settings' ) );
         add_filter( 'option_page_capability_cc_wc_settings', array( $this, 'settings_capability' ) );
         add_action( 'wp_ajax_cc_test_and_autofill', array( $this, 'ajax_test_and_autofill' ) );
+        add_action( 'wp_ajax_cc_autofill_pickup_point', array( $this, 'ajax_autofill_pickup_point' ) );
         add_action( 'wp_ajax_cc_clear_settings',    array( $this, 'ajax_clear_settings' ) );
     }
 
@@ -88,7 +89,7 @@ class CC_Settings {
         ) );
         add_settings_field(
             'cc_wc_billing_account',
-            'Carrier Billing Account',
+            'Κεντρικός κωδικός (Carrier Billing Account)',
             array( $this, 'text_field_callback' ),
             'courier-center',
             'cc_wc_api_section',
@@ -179,6 +180,41 @@ class CC_Settings {
             'courier-center',
             'cc_wc_shipper_section',
             array( 'label_for' => 'cc_wc_shipper_phone' )
+        );
+
+        // ── Σημεία αποστολής (υποκωδικοί) ─────────────────────────────────────
+        add_settings_section(
+            'cc_wc_pickup_section',
+            '📍 Σημεία αποστολής (υποκωδικοί)',
+            array( $this, 'pickup_section_callback' ),
+            'courier-center'
+        );
+
+        register_setting( 'cc_wc_settings', CC_Pickup_Points::OPTION, array(
+            'type'              => 'array',
+            'sanitize_callback' => array( $this, 'sanitize_pickup_points' ),
+            'default'           => array(),
+        ) );
+        add_settings_field(
+            CC_Pickup_Points::OPTION,
+            'Υποκωδικοί',
+            array( $this, 'pickup_points_field_callback' ),
+            'courier-center',
+            'cc_wc_pickup_section'
+        );
+
+        register_setting( 'cc_wc_settings', CC_Pickup_Points::DEFAULT_OPTION, array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '',
+        ) );
+        add_settings_field(
+            CC_Pickup_Points::DEFAULT_OPTION,
+            'Προεπιλεγμένο σημείο',
+            array( $this, 'default_pickup_point_field_callback' ),
+            'courier-center',
+            'cc_wc_pickup_section',
+            array( 'label_for' => CC_Pickup_Points::DEFAULT_OPTION )
         );
 
         // ── Στοιχεία παραλήπτη ────────────────────────────────────────────────
@@ -397,6 +433,174 @@ class CC_Settings {
 
     public function shipper_section_callback() {
         echo '<p>Τα στοιχεία του αποστολέα που θα εμφανίζονται στα vouchers.</p>';
+    }
+
+    // ── Σημεία αποστολής callbacks ───────────────────────────────────────────
+
+    public function pickup_section_callback() {
+        echo '<p>Αν έχετε περισσότερα σημεία παραλαβής, το καθένα είναι υποκωδικός κάτω από τον κεντρικό κωδικό σας. Προσθέστε τους εδώ και πατήστε <strong>Test &amp; Auto-fill</strong> σε κάθε γραμμή. Χωρίς υποκωδικούς, όλα τα vouchers βγαίνουν από την Έδρα όπως πάντα.</p>';
+    }
+
+    /**
+     * Ο έλεγχος «ίδιος με τον κεντρικό» γίνεται με τον κεντρικό κωδικό της ΙΔΙΑΣ
+     * υποβολής, γιατί μπορεί να αλλάζει μαζί με τους υποκωδικούς.
+     */
+    public function sanitize_pickup_points( $value ) {
+        $main_code = isset( $_POST['cc_wc_billing_account'] )
+            ? sanitize_text_field( wp_unslash( $_POST['cc_wc_billing_account'] ) )
+            : (string) get_option( 'cc_wc_billing_account', '' );
+
+        $result = CC_Pickup_Points::sanitize_rows( $value, $main_code );
+
+        foreach ( $result['errors'] as $i => $message ) {
+            add_settings_error( CC_Pickup_Points::OPTION, 'cc_pickup_point_' . $i, $message, 'error' );
+        }
+
+        return $result['rows'];
+    }
+
+    public function pickup_points_field_callback() {
+        $rows  = get_option( CC_Pickup_Points::OPTION, array() );
+        $rows  = is_array( $rows ) ? array_values( $rows ) : array();
+        $nonce = wp_create_nonce( 'cc_autofill_nonce' );
+        ?>
+        <table class="widefat striped" id="cc-pickup-points" style="max-width: 980px;">
+            <thead>
+                <tr>
+                    <th>Υποκωδικός</th>
+                    <th>Όνομα σημείου</th>
+                    <th>Χρέωση</th>
+                    <th>Στοιχεία αποστολέα (από Auto-fill)</th>
+                    <th></th>
+                </tr>
+            </thead>
+            <tbody>
+                <?php foreach ( $rows as $i => $row ) { $this->render_pickup_point_row( $i, $row ); } ?>
+            </tbody>
+        </table>
+        <script type="text/html" id="cc-pickup-point-template"><?php $this->render_pickup_point_row( '__i__', array() ); ?></script>
+        <p><button type="button" class="button" id="cc-pickup-add">+ Προσθήκη υποκωδικού</button></p>
+        <p class="description">Ο υποκωδικός ορίζει από ποιο σημείο παραλαμβάνει η Courier Center. «Χρέωση στον κεντρικό κωδικό»: η αποστολή βγαίνει από το σημείο αλλά χρεώνεται στον κεντρικό κωδικό.</p>
+
+        <script>
+        jQuery(function($) {
+            var $tbody = $('#cc-pickup-points tbody');
+            var fields = ['name', 'address', 'postal', 'city', 'phone'];
+
+            $('#cc-pickup-add').on('click', function() {
+                var html = $('#cc-pickup-point-template').html().replace(/__i__/g, 'n' + Date.now());
+                $tbody.append(html);
+            });
+
+            $tbody.on('click', '.cc-pp-remove', function() {
+                $(this).closest('tr').remove();
+            });
+
+            // Νέος κωδικός → τα στοιχεία του προηγούμενου δεν ισχύουν πια
+            $tbody.on('change', '.cc-pp-code', function() {
+                var $row = $(this).closest('tr');
+                $.each(fields, function(_, f) { $row.find('.cc-pp-' + f).val(''); });
+                $row.find('.cc-pp-summary').text('—');
+                $row.find('.cc-pp-status').css('color', '#8a6d00').text('Κάνε Test & Auto-fill για τον νέο κωδικό.');
+            });
+
+            $tbody.on('click', '.cc-pp-autofill', function() {
+                var $btn  = $(this);
+                var $row  = $btn.closest('tr');
+                var $st   = $row.find('.cc-pp-status');
+                var code  = $.trim($row.find('.cc-pp-code').val());
+
+                if (!code) {
+                    $st.css('color', '#b32d2e').text('Συμπλήρωσε πρώτα τον υποκωδικό.');
+                    return;
+                }
+
+                $btn.prop('disabled', true);
+                $st.css('color', '#666').text('⏳ Test αποστολή...');
+
+                $.post(ajaxurl, {
+                    action: 'cc_autofill_pickup_point',
+                    nonce:  '<?php echo esc_js( $nonce ); ?>',
+                    code:   code
+                }, function(response) {
+                    $btn.prop('disabled', false);
+                    if (!response.success) {
+                        $st.css('color', '#b32d2e').text('❌ ' + (response.data && response.data.message ? response.data.message : 'Άγνωστο σφάλμα'));
+                        return;
+                    }
+                    var d = response.data;
+                    $.each(fields, function(_, f) { $row.find('.cc-pp-' + f).val(d[f] || ''); });
+                    $row.find('.cc-pp-summary').text(d.name + ' — ' + d.address + ', ' + d.postal + ' ' + d.city);
+                    $st.css('color', '#1e6823').text('✅ Σταθμός: ' + (d.station_name || '—') + ' — πάτα «Αποθήκευση Ρυθμίσεων».');
+                }).fail(function(xhr, status, error) {
+                    $btn.prop('disabled', false);
+                    $st.css('color', '#b32d2e').text('❌ AJAX error: ' + error);
+                });
+            });
+        });
+        </script>
+        <?php
+    }
+
+    /**
+     * Μία γραμμή του πίνακα υποκωδικών ($i = '__i__' για το template).
+     */
+    private function render_pickup_point_row( $i, array $row ) {
+        $row  = wp_parse_args( $row, array(
+            'code' => '', 'label' => '', 'bill_to' => 'self',
+            'name' => '', 'address' => '', 'postal' => '', 'city' => '', 'phone' => '',
+        ) );
+        $base    = CC_Pickup_Points::OPTION . '[' . $i . ']';
+        $summary = '' !== $row['name']
+            ? $row['name'] . ' — ' . $row['address'] . ', ' . $row['postal'] . ' ' . $row['city']
+            : '—';
+        ?>
+        <tr class="cc-pickup-row">
+            <td>
+                <input type="text" class="cc-pp-code" style="width: 140px;" placeholder="100-0120-0001"
+                       name="<?php echo esc_attr( $base . '[code]' ); ?>" value="<?php echo esc_attr( $row['code'] ); ?>">
+            </td>
+            <td>
+                <input type="text" style="width: 140px;" placeholder="π.χ. Κηφισός"
+                       name="<?php echo esc_attr( $base . '[label]' ); ?>" value="<?php echo esc_attr( $row['label'] ); ?>">
+            </td>
+            <td>
+                <select name="<?php echo esc_attr( $base . '[bill_to]' ); ?>">
+                    <option value="self" <?php selected( $row['bill_to'], 'self' ); ?>>Στον υποκωδικό</option>
+                    <option value="main" <?php selected( $row['bill_to'], 'main' ); ?>>Στον κεντρικό κωδικό</option>
+                </select>
+            </td>
+            <td>
+                <span class="cc-pp-summary"><?php echo esc_html( $summary ); ?></span>
+                <?php foreach ( array( 'name', 'address', 'postal', 'city', 'phone' ) as $field ) : ?>
+                    <input type="hidden" class="cc-pp-<?php echo esc_attr( $field ); ?>"
+                           name="<?php echo esc_attr( $base . '[' . $field . ']' ); ?>" value="<?php echo esc_attr( $row[ $field ] ); ?>">
+                <?php endforeach; ?>
+                <br><span class="cc-pp-status" style="font-style: italic;"></span>
+            </td>
+            <td style="white-space: nowrap;">
+                <button type="button" class="button cc-pp-autofill">🔍 Test &amp; Auto-fill</button>
+                <button type="button" class="button cc-pp-remove" style="color: #b32d2e;" title="Διαγραφή">🗑</button>
+            </td>
+        </tr>
+        <?php
+    }
+
+    public function default_pickup_point_field_callback( $args ) {
+        $current = (string) get_option( CC_Pickup_Points::DEFAULT_OPTION, '' );
+
+        printf( '<select id="%1$s" name="%1$s">', esc_attr( $args['label_for'] ) );
+        printf( '<option value="">%s</option>', esc_html( 'Έδρα (κεντρικός κωδικός)' ) );
+        foreach ( CC_Pickup_Points::get_sub_points() as $point ) {
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr( $point['code'] ),
+                selected( $current, $point['code'], false ),
+                esc_html( CC_Pickup_Points::display_label( $point ) )
+            );
+        }
+        echo '</select>';
+        echo '<p class="description">Από αυτό το σημείο βγαίνουν η αυτόματη δημιουργία και η απλή μαζική ενέργεια· είναι και η προεπιλογή στο κουμπί της παραγγελίας. Νέοι υποκωδικοί εμφανίζονται εδώ μετά την αποθήκευση.</p>';
     }
 
     // ── Στοιχεία παραλήπτη callbacks ─────────────────────────────────────────
@@ -764,21 +968,63 @@ class CC_Settings {
         update_option( 'cc_wc_api_key',          $api_key );
         update_option( 'cc_wc_billing_account',  $billing_account );
 
-        $api     = new CC_API();
         $context = array(
             'UserAlias'       => $user_alias,
             'CredentialValue' => $credential_value,
             'ApiKey'          => $api_key,
         );
 
+        $details = $this->fetch_account_details( $billing_account, $context );
+        if ( is_wp_error( $details ) ) {
+            wp_send_json_error( array( 'message' => $details->get_error_message() ) );
+        }
+
+        // ── Αποθήκευση στοιχείων αποστολέα ──────────────────────────────────
+        update_option( 'cc_wc_shipper_name',        $details['name'] );
+        update_option( 'cc_wc_shipper_address',     $details['address'] );
+        update_option( 'cc_wc_shipper_postal_code', $details['postal'] );
+        update_option( 'cc_wc_shipper_city',        $details['city'] );
+        update_option( 'cc_wc_shipper_phone',       $details['phone'] );
+        update_option( 'cc_wc_shipper_station',     $details['station'] );
+
+        wp_send_json_success( array(
+            'shipper_name'         => $details['name'],
+            'shipper_address'      => $details['address'],
+            'shipper_postal_code'  => $details['postal'],
+            'shipper_city'         => $details['city'],
+            'shipper_phone'        => $details['phone'],
+            'shipper_station'      => $details['station'],
+        ) );
+    }
+
+    /**
+     * Test αποστολή → GetShipmentDetails → Void: τα στοιχεία αποστολέα και ο σταθμός
+     * ενός κωδικού όπως τα έχει η Courier Center. Το API αγνοεί τη διεύθυνση που
+     * στέλνουμε και βάζει αυτή του κωδικού — γι' αυτό τα στοιχεία είναι ψεύτικα.
+     *
+     * @param string     $account Κεντρικός ή υποκωδικός.
+     * @param array|null $context Credentials· null = τα αποθηκευμένα.
+     * @return array|WP_Error
+     */
+    public function fetch_account_details( $account, $context = null ) {
+        if ( null === $context ) {
+            $context = array(
+                'UserAlias'       => get_option( 'cc_wc_user_alias', '' ),
+                'CredentialValue' => get_option( 'cc_wc_credential_value', '' ),
+                'ApiKey'          => get_option( 'cc_wc_api_key', '' ),
+            );
+        }
+
+        $api = new CC_API();
+
         // ── Βήμα 1: Δημιουργία test αποστολής ──────────────────────────────
         $payload = array(
             'Context'      => $context,
             'shipmentDate' => date( 'Y-m-d' ),
             'comments'     => 'TEST AUTOFILL - DELETE',
-            'Requestor'    => array( 'CarrierBillingAccount' => $billing_account ),
+            'Requestor'    => array( 'CarrierBillingAccount' => $account ),
             'Shipper'      => array(
-                'CarrierBillingAccount' => $billing_account,
+                'CarrierBillingAccount' => $account,
                 'CompanyName'           => 'TEST',
                 'Address'               => 'TEST',
                 'ZipCode'               => '10431',
@@ -815,13 +1061,13 @@ class CC_Settings {
         $create_result = $api->create_shipment( $payload );
 
         if ( is_wp_error( $create_result ) ) {
-            wp_send_json_error( array( 'message' => 'Βήμα 1 — Αποτυχία δημιουργίας test αποστολής: ' . $create_result->get_error_message() ) );
+            return new WP_Error( 'autofill_create', 'Βήμα 1 — Αποτυχία δημιουργίας test αποστολής: ' . $create_result->get_error_message() );
         }
 
         $awb = $create_result['ShipmentNumber'] ?? '';
 
         if ( empty( $awb ) ) {
-            wp_send_json_error( array( 'message' => 'Βήμα 1 — Το API δεν επέστρεψε ShipmentNumber. Response: ' . wp_json_encode( $create_result ) ) );
+            return new WP_Error( 'autofill_no_awb', 'Βήμα 1 — Το API δεν επέστρεψε ShipmentNumber. Response: ' . wp_json_encode( $create_result ) );
         }
 
         // ── Βήμα 2: GetShipmentDetails → εξαγωγή στοιχείων αποστολέα ───────
@@ -829,39 +1075,49 @@ class CC_Settings {
 
         if ( is_wp_error( $details ) ) {
             $api->void_shipment( $awb );
-            wp_send_json_error( array( 'message' => 'Βήμα 2 — Αποτυχία GetShipmentDetails: ' . $details->get_error_message() ) );
+            return new WP_Error( 'autofill_details', 'Βήμα 2 — Αποτυχία GetShipmentDetails: ' . $details->get_error_message() );
         }
 
         // Ανακτούμε στοιχεία από ShipmentDetails[0]['ShipmentInfo']
         $info    = $details['ShipmentDetails'][0]['ShipmentInfo'] ?? array();
         $shipper = $info['Shipper'] ?? array();
 
-        $name            = $shipper['CompanyName'] ?? '';
-        $address         = $shipper['Address'] ?? '';
-        $postal          = $shipper['ZipCode'] ?? '';
-        $city            = $shipper['City'] ?? '';
-        $phone           = $shipper['Phones'] ?? '';
-        $shipper_station = $info['PickupStation']['Prefix'] ?? '';
-
         // ── Βήμα 3: Void αποστολής ──────────────────────────────────────────
-        $void_result = $api->void_shipment( $awb );
+        $api->void_shipment( $awb );
 
-        // ── Βήμα 4: Αποθήκευση στοιχείων αποστολέα ─────────────────────────
-        update_option( 'cc_wc_shipper_name',        $name );
-        update_option( 'cc_wc_shipper_address',     $address );
-        update_option( 'cc_wc_shipper_postal_code', $postal );
-        update_option( 'cc_wc_shipper_city',        $city );
-        update_option( 'cc_wc_shipper_phone',       $phone );
-        update_option( 'cc_wc_shipper_station',     $shipper_station );
+        return array(
+            'name'         => (string) ( $shipper['CompanyName'] ?? '' ),
+            'address'      => (string) ( $shipper['Address'] ?? '' ),
+            'postal'       => (string) ( $shipper['ZipCode'] ?? '' ),
+            'city'         => (string) ( $shipper['City'] ?? '' ),
+            'phone'        => (string) ( $shipper['Phones'] ?? '' ),
+            'station'      => (string) ( $info['PickupStation']['Prefix'] ?? '' ),
+            'station_name' => (string) ( $info['PickupStation']['Name'] ?? '' ),
+        );
+    }
 
-        wp_send_json_success( array(
-            'shipper_name'         => $name,
-            'shipper_address'      => $address,
-            'shipper_postal_code'  => $postal,
-            'shipper_city'         => $city,
-            'shipper_phone'        => $phone,
-            'shipper_station'      => $shipper_station,
-        ) );
+    /**
+     * AJAX: Test & Auto-fill μίας γραμμής υποκωδικού. Επιστρέφει τα στοιχεία —
+     * δεν γράφει options· αποθηκεύονται με τη φόρμα.
+     */
+    public function ajax_autofill_pickup_point() {
+        check_ajax_referer( 'cc_autofill_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        }
+
+        $code = isset( $_POST['code'] ) ? trim( sanitize_text_field( wp_unslash( $_POST['code'] ) ) ) : '';
+        if ( '' === $code ) {
+            wp_send_json_error( array( 'message' => 'Συμπλήρωσε τον υποκωδικό.' ) );
+        }
+
+        $details = $this->fetch_account_details( $code );
+        if ( is_wp_error( $details ) ) {
+            wp_send_json_error( array( 'message' => $details->get_error_message() ) );
+        }
+
+        wp_send_json_success( $details );
     }
 
     /**
@@ -1168,16 +1424,12 @@ class CC_Settings {
     }
 
     /**
-     * AJAX: Διαγραφή όλων των plugin options
+     * Όλα τα options του plugin — όσα σβήνει η «Εκκαθάριση».
+     *
+     * @return string[]
      */
-    public function ajax_clear_settings() {
-        check_ajax_referer( 'cc_clear_settings_nonce', 'nonce' );
-
-        if ( ! current_user_can( 'manage_woocommerce' ) ) {
-            wp_send_json_error( array( 'message' => 'Unauthorized' ) );
-        }
-
-        $options = array(
+    public static function plugin_option_names() {
+        return array(
             'cc_wc_user_alias',
             'cc_wc_credential_value',
             'cc_wc_api_key',
@@ -1188,6 +1440,8 @@ class CC_Settings {
             'cc_wc_shipper_city',
             'cc_wc_shipper_phone',
             'cc_wc_shipper_station',
+            'cc_wc_pickup_points',
+            'cc_wc_default_pickup_point',
             'cc_wc_tracking_url',
             'cc_wc_email_tracking_enabled',
             'cc_wc_print_template',
@@ -1199,8 +1453,19 @@ class CC_Settings {
             'cc_wc_auto_create_status',
             'cc_wc_handled_shipping_methods',
         );
+    }
 
-        foreach ( $options as $option ) {
+    /**
+     * AJAX: Διαγραφή όλων των plugin options
+     */
+    public function ajax_clear_settings() {
+        check_ajax_referer( 'cc_clear_settings_nonce', 'nonce' );
+
+        if ( ! current_user_can( 'manage_woocommerce' ) ) {
+            wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        }
+
+        foreach ( self::plugin_option_names() as $option ) {
             delete_option( $option );
         }
 
