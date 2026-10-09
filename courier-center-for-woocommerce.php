@@ -46,6 +46,7 @@ class Courier_Center_WooCommerce {
     private $status_tracker;
     private $bulk_actions;
     private $manifest_page;
+    private $returns_admin;
     private $email_integration;
     private $bug_report;
     private $docs_page;
@@ -82,6 +83,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-service.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-account.php';
+        require_once CC_WC_PLUGIN_DIR . 'admin/class-cc-returns-admin.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
@@ -128,6 +130,7 @@ class Courier_Center_WooCommerce {
         new CC_BoxNow_Checkout();
         new CC_Returns_Settings();
         new CC_Returns_Account(); // My Account: αίτημα επιστροφής (τρέχει και στο frontend)
+        $this->returns_admin = new CC_Returns_Admin(); // Επιστροφές: σελίδα αιτημάτων + meta box παραγγελίας
         new CC_Updater();
     }
 
@@ -163,6 +166,7 @@ class Courier_Center_WooCommerce {
             array( $this->settings, 'render_page' )
         );
         $this->manifest_page->add_submenu();
+        $this->returns_admin->add_submenu();
         $this->bug_report->add_submenu();
         $this->docs_page->add_submenu();
     }
