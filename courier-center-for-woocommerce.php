@@ -76,6 +76,7 @@ class Courier_Center_WooCommerce {
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-city-scope.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pickup-points.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-rules.php';
+        require_once CC_WC_PLUGIN_DIR . 'includes/returns/class-cc-returns-repo.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-shipment-builder.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-status-tracker.php';
         require_once CC_WC_PLUGIN_DIR . 'includes/class-cc-pdf-scaler.php';
@@ -92,6 +93,8 @@ class Courier_Center_WooCommerce {
     }
 
     private function init_hooks() {
+        // Επιστροφές: δημιουργία/αναβάθμιση του πίνακα αιτημάτων
+        add_action( 'plugins_loaded', array( 'CC_Returns_Repo', 'maybe_upgrade' ) );
         add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
 
