@@ -4,7 +4,7 @@
  *
  * - Submenu «Επιστροφές» (tabs: Αιτήματα | Ρυθμίσεις) με badge για αιτήματα που περιμένουν ενέργεια.
  * - Meta box «Επιστροφές Courier Center» στην οθόνη της παραγγελίας (legacy + HPOS), μόνο όταν υπάρχουν αιτήματα.
- * - Ενέργειες (έγκριση, απόρριψη, επανάληψη, έλεγχος, tracking, voucher) ως συνδέσμοι προς
+ * - Ενέργειες (έγκριση, απόρριψη, δημιουργία, επανάληψη, έλεγχος, tracking, voucher) ως συνδέσμοι προς
  *   admin-post.php?action=cc_return_action με nonce ανά αίτημα. Δεν υπάρχουν <form>/<button> μέσα στο
  *   meta box, γιατί αυτό βρίσκεται μέσα στη φόρμα της παραγγελίας.
  * - Το αποτέλεσμα κάθε ενέργειας αποθηκεύεται σε transient ανά χρήστη και εμφανίζεται ως admin notice.
@@ -30,7 +30,7 @@ class CC_Returns_Admin {
     /** @var CC_API */
     private $api;
 
-    public function __construct( CC_Returns_Service $service = null, CC_API $api = null ) {
+    public function __construct( ?CC_Returns_Service $service = null, ?CC_API $api = null ) {
         $this->api     = $api ? $api : new CC_API();
         $this->service = $service ? $service : new CC_Returns_Service( $this->api );
 
@@ -42,11 +42,17 @@ class CC_Returns_Admin {
 
     // ── Μενού ────────────────────────────────────────────────────────────────
 
-    /** Πλήθος αιτημάτων που περιμένουν ενέργεια: pending_approval + needs_verification. */
+    /**
+     * Πλήθος αιτημάτων που περιμένουν ενέργεια: pending_approval + needs_verification + creation_failed
+     * + approved (εγκεκριμένο που δεν έφτασε σε δημιουργία, π.χ. διακοπή του request).
+     */
     public function pending_count() {
         $counts = CC_Returns_Repo::count_by_status();
-        return (int) ( isset( $counts[ CC_Returns_Rules::ST_PENDING ] ) ? $counts[ CC_Returns_Rules::ST_PENDING ] : 0 )
-            + (int) ( isset( $counts[ CC_Returns_Rules::ST_VERIFY ] ) ? $counts[ CC_Returns_Rules::ST_VERIFY ] : 0 );
+        $total  = 0;
+        foreach ( array( CC_Returns_Rules::ST_PENDING, CC_Returns_Rules::ST_VERIFY, CC_Returns_Rules::ST_FAILED, CC_Returns_Rules::ST_APPROVED ) as $status ) {
+            $total += (int) ( isset( $counts[ $status ] ) ? $counts[ $status ] : 0 );
+        }
+        return $total;
     }
 
     public function menu_title() {
@@ -81,7 +87,9 @@ class CC_Returns_Admin {
     }
 
     public function render_page() {
-        $tab = ( isset( $_GET['tab'] ) && 'settings' === sanitize_key( wp_unslash( $_GET['tab'] ) ) ) ? 'settings' : 'requests'; // phpcs:ignore WordPress.Security.NonceVerification
+        // Ληγμένα «creating» → needs_verification, ώστε να φαίνεται αμέσως η ενέργεια ελέγχου (όχι στο επόμενο cron)
+        $this->service->release_stale_locks();
+        $tab =( isset( $_GET['tab'] ) && 'settings' === sanitize_key( wp_unslash( $_GET['tab'] ) ) ) ? 'settings' : 'requests'; // phpcs:ignore WordPress.Security.NonceVerification
         ?>
         <div class="wrap">
             <h1>↩️ Επιστροφές</h1>
@@ -123,6 +131,11 @@ class CC_Returns_Admin {
         switch ( $row['status'] ) {
             case CC_Returns_Rules::ST_PENDING:
                 $actions[] = array( 'do' => 'approve', 'label' => 'Έγκριση', 'confirm' => false, 'blank' => false );
+                $actions[] = array( 'do' => 'reject', 'label' => 'Απόρριψη', 'confirm' => true, 'blank' => false );
+                break;
+            case CC_Returns_Rules::ST_APPROVED:
+                // Εγκρίθηκε αλλά η δημιουργία δεν ξεκίνησε (π.χ. το request διακόπηκε)
+                $actions[] = array( 'do' => 'create', 'label' => 'Δημιουργία αποστολής', 'confirm' => false, 'blank' => false );
                 $actions[] = array( 'do' => 'reject', 'label' => 'Απόρριψη', 'confirm' => true, 'blank' => false );
                 break;
             case CC_Returns_Rules::ST_FAILED:
@@ -213,6 +226,7 @@ class CC_Returns_Admin {
     }
 
     public function render_meta_box( $post_or_order ) {
+        $this->service->release_stale_locks(); // πριν διαβαστούν οι γραμμές (βλ. render_page)
         $order_id = self::order_id_of( $post_or_order );
         $order    = wc_get_order( $order_id );
         $rows     = $order_id ? CC_Returns_Repo::for_order( $order_id ) : array();
@@ -362,7 +376,8 @@ class CC_Returns_Admin {
                     ? self::result( 'error', $res->get_error_message() )
                     : self::result( 'success', sprintf( 'Το αίτημα #%d απορρίφθηκε.', $id ) );
 
-            case 'retry':
+            case 'create': // approved που δεν έφτασε σε δημιουργία
+            case 'retry':  // creation_failed
                 $res = $this->service->create( $id );
                 if ( is_wp_error( $res ) ) {
                     return self::result( 'error', $res->get_error_message() );

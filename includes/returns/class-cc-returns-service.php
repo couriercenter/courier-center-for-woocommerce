@@ -23,11 +23,12 @@ class CC_Returns_Service {
     const MSG_NOT_PENDING = 'Το αίτημα έχει ήδη εξεταστεί.';
     const MSG_BUSY        = 'Η δημιουργία είναι ήδη σε εξέλιξη ή έχει ολοκληρωθεί.';
     const MSG_NO_RSN      = 'Το API δεν επέστρεψε κωδικό BOX NOW επιστροφής';
+    const MSG_RECHECK     = 'Η αποστολή δεν βρέθηκε ακόμη στο API· θα γίνει νέος έλεγχος (αυτόματα ή με «Έλεγχος ύπαρξης αποστολής») πριν από οποιαδήποτε νέα δημιουργία.';
 
     /** @var CC_API */
     private $api;
 
-    public function __construct( CC_API $api = null ) {
+    public function __construct( ?CC_API $api = null ) {
         $this->api = $api ? $api : new CC_API();
     }
 
@@ -44,6 +45,24 @@ class CC_Returns_Service {
             CC_Returns_Rules::ST_REJECTED => 'Απορρίφθηκε',
         );
         return isset( $labels[ $status ] ) ? $labels[ $status ] : $status;
+    }
+
+    /**
+     * Ετικέτα κατάστασης για τον πελάτη (My Account, emails). Οι εσωτερικές καταστάσεις της
+     * δημιουργίας (approved, creating, needs_verification, creation_failed) εμφανίζονται ως μία.
+     */
+    public static function customer_status_label( $status ) {
+        $preparing = 'Εγκρίθηκε – η αποστολή επιστροφής ετοιμάζεται';
+        $labels    = array(
+            CC_Returns_Rules::ST_PENDING  => 'Σε αναμονή έγκρισης',
+            CC_Returns_Rules::ST_APPROVED => $preparing,
+            CC_Returns_Rules::ST_CREATING => $preparing,
+            CC_Returns_Rules::ST_VERIFY   => $preparing,
+            CC_Returns_Rules::ST_FAILED   => $preparing,
+            CC_Returns_Rules::ST_CREATED  => 'Δημιουργήθηκε αποστολή',
+            CC_Returns_Rules::ST_REJECTED => 'Απορρίφθηκε',
+        );
+        return isset( $labels[ $status ] ) ? $labels[ $status ] : $preparing;
     }
 
     public static function method_label( $method ) {
@@ -262,12 +281,20 @@ class CC_Returns_Service {
         }
 
         $this->log( 'info', sprintf( 'Επιστροφή #%d: νέο αίτημα (παραγγελία %d, %s).', $id, $order->get_id(), $method ) );
-        do_action( 'cc_return_request_received', $id );
 
-        if ( ! CC_Returns_Settings::require_approval() ) {
-            if ( CC_Returns_Repo::transition( $id, array( CC_Returns_Rules::ST_PENDING ), CC_Returns_Rules::ST_APPROVED, array( 'approved_at' => current_time( 'mysql' ) ) ) ) {
-                $this->create( $id ); // το αποτέλεσμα φαίνεται στο status του αιτήματος
-            }
+        if ( CC_Returns_Settings::require_approval() ) {
+            do_action( 'cc_return_request_received', $id );
+            return $id;
+        }
+
+        // Χωρίς έγκριση: πρώτα η δημιουργία. Αν πέτυχε, ο πελάτης παίρνει μόνο το «δημιουργήθηκε»·
+        // αλλιώς (αποτυχία / έλεγχος σε εξέλιξη) το «ελήφθη».
+        if ( CC_Returns_Repo::transition( $id, array( CC_Returns_Rules::ST_PENDING ), CC_Returns_Rules::ST_APPROVED, array( 'approved_at' => current_time( 'mysql' ) ) ) ) {
+            $this->create( $id ); // το αποτέλεσμα φαίνεται στο status του αιτήματος
+        }
+        $fresh = CC_Returns_Repo::get( $id );
+        if ( ! $fresh || CC_Returns_Rules::ST_CREATED !== $fresh['status'] ) {
+            do_action( 'cc_return_request_received', $id );
         }
         return $id;
     }
@@ -307,7 +334,8 @@ class CC_Returns_Service {
      * approved|creation_failed → creating (ατομικά) → API.
      *
      * - needs_verification: ΜΟΝΟ verify(). «Δεν βρέθηκε» → creation_failed + WP_Error, χωρίς create στην
-     *   ίδια κλήση (η επόμενη ρητή create() ξεκινά πάλι με αναζήτηση token).
+     *   ίδια κλήση (η επόμενη ρητή create() ξεκινά πάλι με αναζήτηση token). Εξαίρεση: εντός LOCK_TTL από
+     *   μια αβέβαιη προσπάθεια (timeout κ.λπ.) το «δεν βρέθηκε» δεν είναι οριστικό → μένει needs_verification.
      * - creation_failed με attempts > 0: πριν από την επανάληψη αναζήτηση με το token, γιατί μια προηγούμενη
      *   προσπάθεια (π.χ. timeout) μπορεί να πέτυχε στο API αργότερα. Βρέθηκε → created χωρίς create·
      *   «No shipments found» → κανονική επανάληψη· άλλο σφάλμα → needs_verification χωρίς create.
@@ -349,6 +377,10 @@ class CC_Returns_Service {
     /**
      * Αναζήτηση της αποστολής με Identifier = reference_token (μόνο σε needs_verification).
      *
+     * «Δεν βρέθηκε» μέσα σε LOCK_TTL από την αβέβαιη προσπάθεια δημιουργίας (locked_at, GMT) δεν είναι
+     * οριστικό: ένα timeout του gateway μπορεί να επιστρέψει ενώ το API ακόμη δημιουργεί την αποστολή.
+     * Μένει needs_verification (κρατώντας το αρχικό μήνυμα σφάλματος)· μόνο μετά το LOCK_TTL → creation_failed.
+     *
      * @return array|WP_Error Η γραμμή (shipment_created), ή WP_Error: cc_return_creation_failed
      *                        (δεν βρέθηκε → creation_failed, επιτρέπεται νέα create()) ή
      *                        cc_return_unverified (μένει needs_verification).
@@ -364,6 +396,9 @@ class CC_Returns_Service {
             return $this->mark_created( $row, array( CC_Returns_Rules::ST_VERIFY ), $look['fields'], $look['warnings'] );
         }
         if ( 'none' === $look['state'] ) {
+            if ( self::attempt_is_recent( $row ) ) {
+                return $this->recheck_later( $row );
+            }
             return $this->fail( $row, $look['message'], array( CC_Returns_Rules::ST_VERIFY ) );
         }
         return $this->still_unverified( $row, $look['message'] );
@@ -611,15 +646,43 @@ class CC_Returns_Service {
         return new WP_Error( 'cc_return_creation_failed', $message );
     }
 
-    /** creating → needs_verification και αμέσως verify() (ποτέ δεύτερο create). */
+    /**
+     * creating → needs_verification και αμέσως verify() (ποτέ δεύτερο create).
+     * Το locked_at (χρόνος της προσπάθειας, GMT) ΔΕΝ μηδενίζεται: το verify() το χρειάζεται για να
+     * ξεχωρίσει ένα πρόωρο «δεν βρέθηκε» (εντός LOCK_TTL) από ένα οριστικό.
+     */
     private function to_verification( array $row, $message ) {
         $message = self::clip( $message );
         CC_Returns_Repo::transition( $row['id'], array( CC_Returns_Rules::ST_CREATING ), CC_Returns_Rules::ST_VERIFY, array(
             'last_error' => $message,
-            'locked_at'  => null,
         ) );
         $this->log( 'warning', sprintf( 'Επιστροφή #%d (παραγγελία %d, %s): %s', $row['id'], $row['order_id'], $row['method'], $message ) );
         return $this->verify( $row['id'] );
+    }
+
+    /** Η αβέβαιη προσπάθεια δημιουργίας (locked_at, GMT) έγινε πριν από λιγότερο από LOCK_TTL. */
+    private static function attempt_is_recent( array $row ) {
+        if ( empty( $row['locked_at'] ) ) {
+            return false; // άγνωστος χρόνος (π.χ. ληγμένο κλείδωμα / έλεγχος πριν από επανάληψη) → όχι πρόσφατη
+        }
+        return $row['locked_at'] >= gmdate( 'Y-m-d H:i:s', time() - CC_Returns_Repo::LOCK_TTL );
+    }
+
+    /**
+     * «Δεν βρέθηκε» πολύ νωρίς μετά από αβέβαιη δημιουργία: μένει needs_verification. Το last_error κρατά
+     * το αρχικό μήνυμα (π.χ. timeout) και προστίθεται μία φορά ότι θα ξαναελεγχθεί.
+     */
+    private function recheck_later( array $row ) {
+        $prev = trim( (string) $row['last_error'] );
+        if ( false !== strpos( $prev, self::MSG_RECHECK ) ) {
+            $text = $prev; // ήδη σημειωμένο (επαναλαμβανόμενος έλεγχος)
+        } else {
+            $prev = self::clip( $prev ); // μόνο το αρχικό μήνυμα κόβεται· η σημείωση μένει ολόκληρη
+            $text = ( '' !== $prev ? $prev . ' · ' : '' ) . self::MSG_RECHECK;
+        }
+        CC_Returns_Repo::transition( $row['id'], array( CC_Returns_Rules::ST_VERIFY ), CC_Returns_Rules::ST_VERIFY, array( 'last_error' => $text ) );
+        $this->log( 'warning', sprintf( 'Επιστροφή #%d (παραγγελία %d, %s): η αποστολή δεν βρέθηκε ακόμη μετά από αβέβαιη δημιουργία· μένει σε έλεγχο.', $row['id'], $row['order_id'], $row['method'] ) );
+        return new WP_Error( 'cc_return_unverified', $text );
     }
 
     /** Ο έλεγχος δεν κατέληξε: μένει needs_verification (το last_error γράφεται μόνο αν είναι ακόμα εκεί). */

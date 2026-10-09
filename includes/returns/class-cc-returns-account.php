@@ -29,7 +29,7 @@ class CC_Returns_Account {
     /** @var array|null Οι τιμές της τελευταίας υποβολής (για επανασυμπλήρωση της φόρμας μετά από σφάλμα). */
     private $posted = null;
 
-    public function __construct( CC_Returns_Service $service = null ) {
+    public function __construct( ?CC_Returns_Service $service = null ) {
         $this->service = $service;
 
         add_filter( 'woocommerce_my_account_my_orders_actions', array( $this, 'my_orders_actions' ), 10, 2 );
@@ -169,7 +169,7 @@ class CC_Returns_Account {
         }
         echo '<li>Είδη: ' . esc_html( implode( ', ', $names ) ) . '</li>';
         echo '<li>Μέθοδος: ' . esc_html( CC_Returns_Service::method_label( $req['method'] ) ) . '</li>';
-        echo '<li>Κατάσταση αιτήματος: ' . esc_html( CC_Returns_Service::status_label( $req['status'] ) ) . '</li>';
+        echo '<li>Κατάσταση αιτήματος: ' . esc_html( CC_Returns_Service::customer_status_label( $req['status'] ) ) . '</li>';
         echo '</ul>';
 
         if ( CC_Returns_Rules::ST_CREATED === $req['status'] ) {
@@ -195,10 +195,22 @@ class CC_Returns_Account {
             echo '<p class="cc-return-awb">Αριθμός αποστολής επιστροφής: ' . esc_html( $req['return_awb'] ) . '</p>';
         }
 
-        if ( '' !== (string) $req['display_status'] ) {
-            echo '<p class="cc-return-shipment-status">Κατάσταση αποστολής: ' . esc_html( $req['display_status'] ) . '</p>';
+        if ( self::has_shipment_status( $req ) ) {
+            echo '<p class="cc-return-shipment-status">Κατάσταση αποστολής: ' . esc_html( trim( (string) $req['display_status'] ) ) . '</p>';
         }
         echo '</div>';
+    }
+
+    /**
+     * Υπάρχει πραγματικό status αποστολής για τον πελάτη; Μια φρέσκια επιστροφή έχει ShipmentStatus 0 και
+     * ShipmentStatusDesc «None» — τότε η γραμμή «Κατάσταση αποστολής» δεν εμφανίζεται.
+     */
+    private static function has_shipment_status( array $req ) {
+        $display = trim( (string) $req['display_status'] );
+        if ( '' === $display || 0 === strcasecmp( $display, 'None' ) ) {
+            return false;
+        }
+        return '0' !== trim( (string) $req['shipment_status'] );
     }
 
     // ── Φόρμα ────────────────────────────────────────────────────────────────
