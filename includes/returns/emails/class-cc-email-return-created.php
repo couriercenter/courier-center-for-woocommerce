@@ -36,11 +36,6 @@ class CC_Email_Return_Created extends CC_Email_Return_Base {
     }
 
     protected function instructions() {
-        if ( ! $this->return_request ) {
-            return '';
-        }
-        return CC_Returns_Rules::METHOD_BOXNOW === $this->return_request['method']
-            ? CC_Returns_Settings::boxnow_instructions()
-            : CC_Returns_Settings::dropoff_instructions();
+        return $this->return_request ? CC_Returns_Settings::instructions_for( $this->return_request['method'] ) : '';
     }
 }
