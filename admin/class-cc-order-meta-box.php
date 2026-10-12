@@ -1374,13 +1374,13 @@ class CC_Order_Meta_Box {
             wp_send_json_error( array( 'message' => $result->get_error_message() ) );
         }
 
-        // Parse the response - data is inside ShipmentDetails[0].ShipmentInfo
+        // Το ShipmentInfo της αποστολής με αυτό το AWB (η απάντηση περιέχει και τις επιστροφές)
         $status_code = '';
         $status_desc = '';
         $action_code = '';
 
-        if ( isset( $result['ShipmentDetails'][0]['ShipmentInfo'] ) ) {
-            $info = $result['ShipmentDetails'][0]['ShipmentInfo'];
+        $info = CC_API::pick_shipment_info( $result, $awb );
+        if ( null !== $info ) {
             $status_code = (string) ( $info['ShipmentStatus'] ?? '' );
             $status_desc = $info['ShipmentStatusDesc'] ?? '';
             $action_code = $info['CollectionStatus'] ?? '';

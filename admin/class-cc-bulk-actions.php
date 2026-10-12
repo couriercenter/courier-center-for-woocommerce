@@ -648,8 +648,8 @@ class CC_Bulk_Actions {
             if ( is_wp_error( $result ) ) { $failed++; $errors[] = "#$order_id ($awb): " . $result->get_error_message(); continue; }
 
             $status_code = ''; $status_desc = ''; $action_code = '';
-            if ( isset( $result['ShipmentDetails'][0]['ShipmentInfo'] ) ) {
-                $info        = $result['ShipmentDetails'][0]['ShipmentInfo'];
+            $info = CC_API::pick_shipment_info( $result, $awb );
+            if ( null !== $info ) {
                 $status_code = (string) ( $info['ShipmentStatus'] ?? '' );
                 $status_desc = $info['ShipmentStatusDesc'] ?? '';
                 $action_code = $info['CollectionStatus'] ?? '';

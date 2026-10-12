@@ -225,8 +225,8 @@ class CC_Status_Tracker {
         $status_desc = '';
         $action_code = '';
 
-        if ( isset( $result['ShipmentDetails'][0]['ShipmentInfo'] ) ) {
-            $info = $result['ShipmentDetails'][0]['ShipmentInfo'];
+        $info = CC_API::pick_shipment_info( $result, $order->get_meta( '_cc_voucher_number' ) );
+        if ( null !== $info ) {
             $status_code = (string) ( $info['ShipmentStatus'] ?? '' );
             $status_desc = $info['ShipmentStatusDesc'] ?? '';
             $action_code = $info['CollectionStatus'] ?? '';

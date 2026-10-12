@@ -249,7 +249,41 @@ class CC_API {
             return new WP_Error( 'api_exception', $e->getMessage() );
         }
     }
-    
+
+    /**
+     * ShipmentInfo της ζητούμενης αποστολής από απάντηση GetShipmentDetails.
+     *
+     * Με Identifier = AWB το API φέρνει και τις επιστροφές του (Reference1 = AWB),
+     * οπότε διαλέγουμε το στοιχείο με ShipmentAwb = AWB· αν δεν ταιριάζει κανένα,
+     * το πρώτο (όπως πριν).
+     *
+     * @param mixed  $result Απάντηση get_shipment_details()
+     * @param string $awb    Ζητούμενο AWB
+     * @return array|null
+     */
+    public static function pick_shipment_info( $result, $awb ) {
+        if ( ! is_array( $result ) || empty( $result['ShipmentDetails'] ) || ! is_array( $result['ShipmentDetails'] ) ) {
+            return null;
+        }
+
+        $awb   = trim( (string) $awb );
+        $first = null;
+        foreach ( $result['ShipmentDetails'] as $detail ) {
+            if ( ! isset( $detail['ShipmentInfo'] ) || ! is_array( $detail['ShipmentInfo'] ) ) {
+                continue;
+            }
+            $info = $detail['ShipmentInfo'];
+            if ( null === $first ) {
+                $first = $info;
+            }
+            if ( '' !== $awb && isset( $info['ShipmentAwb'] ) && trim( (string) $info['ShipmentAwb'] ) === $awb ) {
+                return $info;
+            }
+        }
+
+        return $first;
+    }
+
     /**
      * Get manifest PDF for a specific date
      *
