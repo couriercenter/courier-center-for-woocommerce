@@ -34,7 +34,7 @@ class CC_Returns_Rules {
         'City'    => 'DROPOFF',
     );
 
-    // UNCONFIRMED: τιμές από το δοκιμαστικό payload BOX NOW — να επιβεβαιωθεί ότι ισχύουν για όλες τις επιστροφές.
+    // Σταθερός αποστολέας για όλες τις επιστροφές BOX NOW (επιβεβαιωμένο από Courier Center).
     const BOXNOW_SHIPPER = array(
         'Address' => 'BOX NOW ATH',
         'ZipCode' => '99981',
