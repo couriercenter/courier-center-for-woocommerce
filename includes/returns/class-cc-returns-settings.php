@@ -26,9 +26,11 @@ class CC_Returns_Settings {
     const OPT_WEIGHT            = 'cc_wc_returns_weight';
     const OPT_DROPOFF_TEXT      = 'cc_wc_returns_dropoff_instructions';
     const OPT_BOXNOW_TEXT       = 'cc_wc_returns_boxnow_instructions';
+    const OPT_PICKUP_TEXT       = 'cc_wc_returns_pickup_instructions';
 
     const DEFAULT_DROPOFF_TEXT = 'Συσκευάστε καλά το δέμα και παραδώστε το σε οποιοδήποτε κατάστημα Courier Center αναφέροντας τον αριθμό αποστολής επιστροφής.';
     const DEFAULT_BOXNOW_TEXT  = 'Συσκευάστε καλά το δέμα και παραδώστε το σε ένα BOX NOW locker χρησιμοποιώντας τον κωδικό BOX NOW επιστροφής.';
+    const DEFAULT_PICKUP_TEXT  = 'Ο courier της Courier Center θα παραλάβει το δέμα από τη διεύθυνση που δηλώσατε, την ημερομηνία που επιλέξατε. Έχετε το δέμα συσκευασμένο και έτοιμο.';
 
     const WEIGHT_MIN = 0.1;
     const WEIGHT_MAX = 30.0;
@@ -59,6 +61,7 @@ class CC_Returns_Settings {
             self::OPT_WEIGHT,
             self::OPT_DROPOFF_TEXT,
             self::OPT_BOXNOW_TEXT,
+            self::OPT_PICKUP_TEXT,
         );
     }
 
@@ -82,14 +85,14 @@ class CC_Returns_Settings {
     }
 
     /**
-     * Ενεργές μέθοδοι σε σειρά METHODS_ORDER. Η παραλαβή (PICKUP) δεν είναι ποτέ ενεργή,
-     * ακόμη κι αν το option έχει '1' στη βάση.
+     * Ενεργές μέθοδοι σε σειρά METHODS_ORDER.
      *
      * @return string[]
      */
     public static function enabled_methods() {
         $on = array(
             CC_Returns_Rules::METHOD_DROPOFF => self::flag( self::OPT_METHOD_DROPOFF, '1' ),
+            CC_Returns_Rules::METHOD_PICKUP  => self::flag( self::OPT_METHOD_PICKUP, '0' ),
             CC_Returns_Rules::METHOD_BOXNOW  => self::flag( self::OPT_METHOD_BOXNOW, '0' ),
         );
 
@@ -125,6 +128,22 @@ class CC_Returns_Settings {
     public static function boxnow_instructions() {
         $text = (string) get_option( self::OPT_BOXNOW_TEXT, '' );
         return '' === trim( $text ) ? self::DEFAULT_BOXNOW_TEXT : $text;
+    }
+
+    public static function pickup_instructions() {
+        $text = (string) get_option( self::OPT_PICKUP_TEXT, '' );
+        return '' === trim( $text ) ? self::DEFAULT_PICKUP_TEXT : $text;
+    }
+
+    /** Οι οδηγίες προς τον πελάτη για τη μέθοδο (My Account, email «δημιουργήθηκε»). */
+    public static function instructions_for( $method ) {
+        if ( CC_Returns_Rules::METHOD_BOXNOW === $method ) {
+            return self::boxnow_instructions();
+        }
+        if ( CC_Returns_Rules::METHOD_PICKUP === $method ) {
+            return self::pickup_instructions();
+        }
+        return self::dropoff_instructions();
     }
 
     /**
@@ -238,11 +257,6 @@ class CC_Returns_Settings {
         return empty( $value ) || '0' === (string) $value ? '0' : '1';
     }
 
-    /** Η παραλαβή δεν ενεργοποιείται από τη φόρμα — πάντα '0'. */
-    public static function sanitize_pickup_flag( $value ) {
-        return '0';
-    }
-
     public static function sanitize_window_days( $value ) {
         return max( 0, (int) $value );
     }
@@ -283,16 +297,10 @@ class CC_Returns_Settings {
 
         $this->register_flag( self::OPT_METHOD_DROPOFF, '1', 'Drop Off σε κατάστημα', 'cc_returns_methods',
             'Ο πελάτης παραδίδει το δέμα σε οποιοδήποτε κατάστημα Courier Center.' );
+        $this->register_flag( self::OPT_METHOD_PICKUP, '0', 'Παραλαβή από τον πελάτη', 'cc_returns_methods',
+            'Ο courier παραλαμβάνει το δέμα από τη διεύθυνση του πελάτη, την εργάσιμη ημέρα και (προαιρετικά) το διάστημα τουλάχιστον 4 ωρών, 09:00–17:00, που επιλέγει ο πελάτης.' );
         $this->register_flag( self::OPT_METHOD_BOXNOW, '0', 'BOX NOW', 'cc_returns_methods',
             'Επιστροφή μέσω BOX NOW locker. Ενεργοποιήστε το όταν επιβεβαιώσετε ότι λειτουργεί end-to-end.' );
-
-        register_setting( self::GROUP, self::OPT_METHOD_PICKUP, array(
-            'type'              => 'string',
-            'sanitize_callback' => array( __CLASS__, 'sanitize_pickup_flag' ),
-            'default'           => '0',
-        ) );
-        add_settings_field( self::OPT_METHOD_PICKUP, 'Παραλαβή από τον πελάτη', array( $this, 'field_pickup' ),
-            self::PAGE, 'cc_returns_methods' );
 
         // ── Λογαριασμοί επιστροφών ──
         add_settings_section( 'cc_returns_accounts', '🔁 Λογαριασμοί επιστροφών', array( $this, 'accounts_section' ), self::PAGE );
@@ -313,6 +321,7 @@ class CC_Returns_Settings {
 
         foreach ( array(
             self::OPT_DROPOFF_TEXT => array( 'Οδηγίες Drop Off', self::DEFAULT_DROPOFF_TEXT ),
+            self::OPT_PICKUP_TEXT  => array( 'Οδηγίες Pickup', self::DEFAULT_PICKUP_TEXT ),
             self::OPT_BOXNOW_TEXT  => array( 'Οδηγίες BOX NOW', self::DEFAULT_BOXNOW_TEXT ),
         ) as $option => $def ) {
             register_setting( self::GROUP, $option, array(
@@ -404,15 +413,6 @@ class CC_Returns_Settings {
             checked( $value, '1', false ),
             esc_html( $args['description'] )
         );
-    }
-
-    public function field_pickup() {
-        printf(
-            '<label><input type="checkbox" id="%1$s" name="%1$s" value="1" disabled="disabled"> %2$s</label>',
-            esc_attr( self::OPT_METHOD_PICKUP ),
-            esc_html( 'Παραλαβή του δέματος από τη διεύθυνση του πελάτη' )
-        );
-        echo '<p class="description">' . esc_html( 'Διαθέσιμο όταν επιβεβαιωθούν από την Courier Center τα πεδία ημερομηνίας/ώρας παραλαβής' ) . '</p>';
     }
 
     public function field_window_days() {
