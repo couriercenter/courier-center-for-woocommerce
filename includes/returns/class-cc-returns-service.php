@@ -539,14 +539,24 @@ class CC_Returns_Service {
             $this->log( 'warning', sprintf( 'Επιστροφή #%d (παραγγελία %d, %s): ο αποστολέας της αρχικής στο API (%s) διαφέρει από το σημείο της παραγγελίας (%s)· ισχύει του API.', $row['id'], $row['order_id'], $row['method'], $point, $row['original_shipper_code'] ) );
         }
 
-        // 4. Λογαριασμοί
+        // 4. Λογαριασμοί και χρέωση· για Pickup, ημερομηνία που πέρασε → επόμενη εργάσιμη (ίδιο διάστημα)
+        $main   = (string) get_option( 'cc_wc_billing_account', '' );
         $fields = array(
             'original_shipper_code' => $point,
             'return_account_code'   => CC_Returns_Settings::return_account_for( $point ) ?: $point,
-            'requestor_account'     => (string) get_option( 'cc_wc_billing_account', '' ),
+            'requestor_account'     => $main,
         );
+        if ( CC_Returns_Rules::METHOD_PICKUP === $row['method'] ) {
+            $next = CC_Returns_Rules::next_working_day( self::now_local() );
+            if ( (string) $row['pickup_date'] < $next ) {
+                $fields['pickup_date'] = $next;
+                $this->log( 'info', sprintf( 'Επιστροφή #%d: η ημερομηνία παραλαβής μετακινήθηκε από %s σε %s.', $row['id'], (string) $row['pickup_date'], $next ) );
+            }
+        }
         CC_Returns_Repo::update( $row['id'], $fields );
-        $row = array_merge( $row, $fields );
+        $row            = array_merge( $row, $fields );
+        $row['bill_to'] = CC_Returns_Rules::bill_to( CC_Pickup_Points::get_point( $point ), $main );
+        $this->log( 'info', sprintf( 'Επιστροφή #%d: χρέωση %s (σημείο %s, λογαριασμός επιστροφών %s).', $row['id'], $row['bill_to'], $point, $row['return_account_code'] ) );
 
         // 5. Payload
         $ctx = array(
