@@ -169,7 +169,7 @@ class CC_Returns_Account {
         }
         echo '<li>Είδη: ' . esc_html( implode( ', ', $names ) ) . '</li>';
         echo '<li>Μέθοδος: ' . esc_html( CC_Returns_Service::method_label( $req['method'] ) ) . '</li>';
-        if ( CC_Returns_Rules::METHOD_PICKUP === $req['method'] && '' !== CC_Returns_Service::pickup_label( $req ) && CC_Returns_Rules::ST_CREATED !== $req['status'] ) {
+        if ( CC_Returns_Rules::METHOD_PICKUP === $req['method'] && '' !== CC_Returns_Service::pickup_label( $req ) && ! in_array( $req['status'], array( CC_Returns_Rules::ST_CREATED, CC_Returns_Rules::ST_REJECTED ), true ) ) {
             echo '<li>Παραλαβή: ' . esc_html( CC_Returns_Service::pickup_label( $req ) ) . '</li>';
         }
         echo '<li>Κατάσταση αιτήματος: ' . esc_html( CC_Returns_Service::customer_status_label( $req['status'] ) ) . '</li>';

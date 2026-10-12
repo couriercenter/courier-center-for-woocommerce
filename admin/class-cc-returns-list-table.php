@@ -190,7 +190,14 @@ class CC_Returns_List_Table extends WP_List_Table {
     }
 
     public function column_method( $item ) {
-        return esc_html( CC_Returns_Service::method_label( $item['method'] ) );
+        $html = esc_html( CC_Returns_Service::method_label( $item['method'] ) );
+        if ( CC_Returns_Rules::METHOD_PICKUP === $item['method'] ) {
+            $label = CC_Returns_Service::pickup_label( $item );
+            if ( '' !== $label ) {
+                $html .= '<br><small>' . esc_html( 'Παραλαβή: ' . $label ) . '</small>';
+            }
+        }
+        return $html;
     }
 
     public function column_status( $item ) {
