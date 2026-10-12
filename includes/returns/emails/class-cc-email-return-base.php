@@ -42,7 +42,7 @@ abstract class CC_Email_Return_Base extends WC_Email {
         $row   = CC_Returns_Repo::get( (int) $request_id );
         $order = $row ? wc_get_order( (int) $row['order_id'] ) : false;
         // Επιστροφή του καταστήματος χωρίς «Αποστολή email στον πελάτη» → κανένα email πελάτη
-        if ( $row && $order instanceof WC_Order && 0 !== (int) ( isset( $row['notify_customer'] ) ? $row['notify_customer'] : 1 ) ) {
+        if ( $row && $order instanceof WC_Order && $this->allowed_for( $row ) ) {
             $this->object         = $order;
             $this->return_request = $row;
             $this->recipient      = $order->get_billing_email();
@@ -56,6 +56,11 @@ abstract class CC_Email_Return_Base extends WC_Email {
         }
 
         $this->restore_locale();
+    }
+
+    /** Στέλνεται για αυτό το αίτημα; Όχι για επιστροφή του καταστήματος χωρίς «Αποστολή email στον πελάτη». */
+    protected function allowed_for( array $row ) {
+        return 0 !== (int) ( isset( $row['notify_customer'] ) ? $row['notify_customer'] : 1 );
     }
 
     /** Γραμμές μηνύματος (απλό κείμενο) που εμφανίζονται στο email. Οι υποκλάσεις τις ορίζουν. */

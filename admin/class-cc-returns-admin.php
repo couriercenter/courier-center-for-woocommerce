@@ -34,6 +34,9 @@ class CC_Returns_Admin {
     /** @var CC_Returns_Admin_New */
     public $new_return;
 
+    /** @var int|null pending_count() ανά request (badge μενού + ειδοποίηση) */
+    private $pending_cache = null;
+
     public function __construct( ?CC_Returns_Service $service = null, ?CC_API $api = null ) {
         $this->api     = $api ? $api : new CC_API();
         $this->service = $service ? $service : new CC_Returns_Service( $this->api );
@@ -44,6 +47,7 @@ class CC_Returns_Admin {
         add_action( 'admin_post_' . self::ACTION, array( $this, 'handle_action' ) );
         add_action( 'admin_notices', array( $this, 'show_notice' ) );
         add_action( 'admin_notices', array( $this, 'pending_notice' ) );
+        add_action( 'admin_menu', array( $this, 'badge_top_menu' ), 999 );
 
         // Στήλη «Επιστροφή» στη λίστα παραγγελιών (HPOS + legacy)
         add_filter( 'manage_woocommerce_page_wc-orders_columns', array( $this, 'add_order_column' ) );
@@ -69,8 +73,34 @@ class CC_Returns_Admin {
 
     /** « <span class="awaiting-mod">N</span>» όταν υπάρχουν αιτήματα που περιμένουν ενέργεια, αλλιώς ''. */
     public function badge_html() {
-        $n = $this->pending_count();
+        if ( ! current_user_can( self::CAPABILITY ) ) {
+            return '';
+        }
+        if ( null === $this->pending_cache ) {
+            $this->pending_cache = $this->pending_count();
+        }
+        $n = $this->pending_cache;
         return $n > 0 ? ' <span class="awaiting-mod">' . (int) $n . '</span>' : '';
+    }
+
+    /**
+     * Ο αριθμός στο κύριο μενού «Courier Center». Μπαίνει μετά την εγγραφή του μενού (στο $menu), όχι στο
+     * add_menu_page(): εκεί ο τίτλος γίνεται το πρόθεμα των screen ids όλων των υποσελίδων.
+     */
+    public function badge_top_menu() {
+        global $menu;
+        if ( ! is_array( $menu ) ) {
+            return;
+        }
+        $badge = $this->badge_html();
+        if ( '' === $badge ) {
+            return;
+        }
+        foreach ( $menu as $i => $item ) {
+            if ( isset( $item[2] ) && 'courier-center' === $item[2] && false === strpos( (string) $item[0], 'awaiting-mod' ) ) {
+                $menu[ $i ][0] .= $badge; // phpcs:ignore WordPress.WP.GlobalVariablesOverride
+            }
+        }
     }
 
     public function menu_title() {
@@ -85,16 +115,20 @@ class CC_Returns_Admin {
      */
     public function pending_notice_html( $screen_id ) {
         $screen_id = (string) $screen_id;
-        if ( ! current_user_can( 'edit_shop_orders' ) || 'courier-center_page_' . self::PAGE === $screen_id ) {
+        $returns   = '_page_' . self::PAGE;
+        if ( ! current_user_can( self::CAPABILITY ) || substr( $screen_id, -strlen( $returns ) ) === $returns ) {
             return '';
         }
         $wanted = 'dashboard' === $screen_id || 'edit-shop_order' === $screen_id || 'shop_order' === $screen_id
             || 0 === strpos( $screen_id, 'woocommerce_page_' ) || 'toplevel_page_courier-center' === $screen_id
-            || 0 === strpos( $screen_id, 'courier-center_page_' );
+            || 0 === strpos( $screen_id, 'courier-center' );
         if ( ! $wanted ) {
             return '';
         }
-        $n = $this->pending_count();
+        if ( null === $this->pending_cache ) {
+            $this->pending_cache = $this->pending_count();
+        }
+        $n = $this->pending_cache;
         if ( $n < 1 ) {
             return '';
         }
@@ -305,8 +339,7 @@ class CC_Returns_Admin {
             return;
         }
         $order = wc_get_order( $order_id );
-        $awb   = $order ? trim( (string) $order->get_meta( '_cc_voucher_number' ) ) : '';
-        if ( '' === $awb && ! CC_Returns_Repo::for_order( $order_id ) ) {
+        if ( ! ( $order && CC_Returns_Service::has_active_awb( $order ) ) && ! CC_Returns_Repo::for_order( $order_id ) ) {
             return;
         }
         add_meta_box(
@@ -343,7 +376,7 @@ class CC_Returns_Admin {
         foreach ( $rows as $row ) {
             $this->render_request( $row );
         }
-        if ( $order && CC_Returns_Service::has_active_awb( $order ) ) {
+        if ( $order && CC_Returns_Service::has_active_awb( $order ) && current_user_can( self::CAPABILITY ) ) {
             if ( ! $rows ) {
                 echo '<p>' . esc_html( 'Δεν υπάρχουν επιστροφές για αυτή την παραγγελία.' ) . '</p>';
             }

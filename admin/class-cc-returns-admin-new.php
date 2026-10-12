@@ -143,7 +143,7 @@ class CC_Returns_Admin_New {
     public function handle() {
         $order_id = isset( $_POST['order_id'] ) ? absint( $_POST['order_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification
         check_admin_referer( 'cc_return_new_' . $order_id );
-        if ( ! current_user_can( 'edit_shop_orders' ) ) {
+        if ( ! current_user_can( CC_Returns_Admin::CAPABILITY ) ) {
             wp_die( 'Δεν έχετε δικαίωμα να εκτελέσετε αυτή την ενέργεια.', 'Μη εξουσιοδοτημένη πρόσβαση', array( 'response' => 403 ) );
         }
         $user_id = get_current_user_id();
@@ -200,6 +200,9 @@ class CC_Returns_Admin_New {
 
         $id = $this->service->shop_create( $order, (int) $user_id, $data );
         if ( is_wp_error( $id ) ) {
+            if ( 'cc_return_forbidden' === $id->get_error_code() ) {
+                unset( $data['request_uid'] ); // ανήκει σε άλλη παραγγελία/πελάτη → νέο uid στη φόρμα
+            }
             set_transient( self::posted_key( $user_id ), array_merge( $data, array( 'qty' => $qty, 'order_id' => $order_id ) ), self::POSTED_TTL );
             return array( 'type' => 'error', 'message' => $id->get_error_message(), 'redirect' => self::url( $order_id ) );
         }

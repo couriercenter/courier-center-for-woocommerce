@@ -9,6 +9,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class CC_Email_Return_Rejected extends CC_Email_Return_Base {
 
+    /** Ο πελάτης δεν έκανε αίτημα όταν την επιστροφή τη δημιούργησε το κατάστημα → κανένα «απορρίφθηκε». */
+    protected function allowed_for( array $row ) {
+        return parent::allowed_for( $row ) && ( ! isset( $row['origin'] ) || 'shop' !== $row['origin'] );
+    }
+
     public function __construct() {
         $this->id             = 'cc_return_rejected';
         $this->title          = 'Επιστροφή: το αίτημα απορρίφθηκε';
