@@ -2,7 +2,8 @@
 /**
  * Επιστροφές: καθαροί κανόνες (χωρίς βάση, χωρίς API).
  *
- * Σταθερές μεθόδων/καταστάσεων, κανόνες τηλεφώνων, μεγέθη BOX NOW locker,
+ * Σταθερές μεθόδων/καταστάσεων, κανόνες τηλεφώνων, μεγέθη BOX NOW locker, ημερομηνίες/διάστημα
+ * Pickup, χρέωση επιστροφής,
  * σύγκριση κωδικών λογαριασμού και η ένδειξη «ΑΣΚΟΠΗ ΠΡΟΣΕΛΕΥΣΗ».
  */
 
@@ -55,6 +56,20 @@ class CC_Returns_Rules {
 
     const MSG_PHONE  = 'Για τη δημιουργία της επιστροφής απαιτείται τουλάχιστον ένας έγκυρος αριθμός τηλεφώνου (σταθερό ή κινητό).';
     const MSG_MOBILE = 'Για επιστροφή μέσω BOX NOW απαιτείται έγκυρο ελληνικό κινητό τηλέφωνο (69XXXXXXXX).';
+    // Pickup (παραλαβή από τη διεύθυνση του πελάτη)
+    const PICKUP_HOUR_MIN     = 9;
+    const PICKUP_HOUR_MAX     = 17;
+    const PICKUP_MIN_HOURS    = 4;
+    const PICKUP_DAYS         = 10;
+    const PICKUP_DEFAULT_FROM = '09:00';
+    const PICKUP_DEFAULT_TO   = '17:00';
+    const COURIER_NOTES_MAX   = 200;
+
+    const MSG_PICKUP_DATE   = 'Η ημερομηνία παραλαβής δεν είναι διαθέσιμη. Επιλέξτε μία από τη λίστα.';
+    const MSG_PICKUP_HALF   = 'Συμπληρώστε και τα δύο άκρα του χρονικού διαστήματος ή κανένα.';
+    const MSG_PICKUP_WINDOW = 'Το διάστημα παραλαβής πρέπει να είναι τουλάχιστον 4 ώρες, μεταξύ 09:00 και 17:00.';
+
+    const DAY_NAMES = array( 1 => 'Δευτέρα', 2 => 'Τρίτη', 3 => 'Τετάρτη', 4 => 'Πέμπτη', 5 => 'Παρασκευή', 6 => 'Σάββατο', 7 => 'Κυριακή' );
 
     /**
      * Μόνο ψηφία· κόβει το πρόθεμα +30 / 0030.
@@ -182,5 +197,112 @@ class CC_Returns_Rules {
             }
         }
         return '';
+    }
+    // ── Pickup ───────────────────────────────────────────────────────────────
+
+    /** Η επόμενη ημέρα μετά το $now που δεν είναι Σάββατο/Κυριακή (Y-m-d, στη ζώνη του $now). */
+    public static function next_working_day( DateTimeImmutable $now ) {
+        $d = $now->setTime( 0, 0 )->modify( '+1 day' );
+        while ( (int) $d->format( 'N' ) >= 6 ) {
+            $d = $d->modify( '+1 day' );
+        }
+        return $d->format( 'Y-m-d' );
+    }
+
+    /** Οι PICKUP_DAYS εργάσιμες από την επόμενη εργάσιμη (Y-m-d). Αργίες δεν αφαιρούνται. */
+    public static function pickup_dates( DateTimeImmutable $now ) {
+        $d   = new DateTimeImmutable( self::next_working_day( $now ), $now->getTimezone() );
+        $out = array();
+        while ( count( $out ) < self::PICKUP_DAYS ) {
+            if ( (int) $d->format( 'N' ) < 6 ) {
+                $out[] = $d->format( 'Y-m-d' );
+            }
+            $d = $d->modify( '+1 day' );
+        }
+        return $out;
+    }
+
+    public static function validate_pickup_date( $date, DateTimeImmutable $now ) {
+        return in_array( (string) $date, self::pickup_dates( $now ), true )
+            ? true
+            : new WP_Error( 'cc_return_pickup_date', self::MSG_PICKUP_DATE );
+    }
+
+    /** Και τα δύο κενά = χωρίς διάστημα. Αλλιώς HH:00, 09–17, τουλάχιστον 4 ώρες. */
+    public static function validate_pickup_window( $from, $to ) {
+        $from = trim( (string) $from );
+        $to   = trim( (string) $to );
+        if ( '' === $from && '' === $to ) {
+            return true;
+        }
+        if ( '' === $from || '' === $to ) {
+            return new WP_Error( 'cc_return_pickup_half', self::MSG_PICKUP_HALF );
+        }
+        if ( 1 !== preg_match( '/^\d{2}:00$/', $from ) || 1 !== preg_match( '/^\d{2}:00$/', $to ) ) {
+            return new WP_Error( 'cc_return_pickup_window', self::MSG_PICKUP_WINDOW );
+        }
+        $f = (int) substr( $from, 0, 2 );
+        $t = (int) substr( $to, 0, 2 );
+        if ( $f < self::PICKUP_HOUR_MIN || $t > self::PICKUP_HOUR_MAX || $t - $f < self::PICKUP_MIN_HOURS ) {
+            return new WP_Error( 'cc_return_pickup_window', self::MSG_PICKUP_WINDOW );
+        }
+        return true;
+    }
+
+    public static function pickup_hours_from() {
+        return self::hours( self::PICKUP_HOUR_MIN, self::PICKUP_HOUR_MAX - self::PICKUP_MIN_HOURS );
+    }
+
+    public static function pickup_hours_to() {
+        return self::hours( self::PICKUP_HOUR_MIN + self::PICKUP_MIN_HOURS, self::PICKUP_HOUR_MAX );
+    }
+
+    private static function hours( $first, $last ) {
+        $out = array();
+        for ( $h = $first; $h <= $last; $h++ ) {
+            $out[] = sprintf( '%02d:00', $h );
+        }
+        return $out;
+    }
+
+    /**
+     * BillTo της επιστροφής: Έδρα ή σημείο με χρέωση στον κεντρικό → Requestor· αλλιώς ο παραλήπτης
+     * (λογαριασμός επιστροφών) → Consignee.
+     *
+     * @param array|null $point     Σημείο από CC_Pickup_Points::get_point() (code, bill_to).
+     * @param string     $main_code cc_wc_billing_account
+     */
+    public static function bill_to( $point, $main_code ) {
+        if ( ! is_array( $point ) || empty( $point['code'] ) ) {
+            return 'Requestor';
+        }
+        if ( self::codes_equal( $point['code'], $main_code ) || ( isset( $point['bill_to'] ) && 'main' === $point['bill_to'] ) ) {
+            return 'Requestor';
+        }
+        return 'Consignee';
+    }
+
+    /** «Τρίτη 13/10» ('' για άκυρη ημερομηνία). */
+    public static function pickup_date_label( $date ) {
+        $d = DateTimeImmutable::createFromFormat( '!Y-m-d', (string) $date );
+        if ( ! $d || $d->format( 'Y-m-d' ) !== (string) $date ) {
+            return '';
+        }
+        return self::DAY_NAMES[ (int) $d->format( 'N' ) ] . ' ' . $d->format( 'd/m' );
+    }
+
+    /** «Τρίτη 13/10/2026, 09:00–13:00» ή «…, οποιαδήποτε ώρα 09:00–17:00» ('' χωρίς έγκυρη ημερομηνία). */
+    public static function pickup_text( $date, $from, $to ) {
+        $label = self::pickup_date_label( $date );
+        if ( '' === $label ) {
+            return '';
+        }
+        $label .= '/' . substr( (string) $date, 0, 4 );
+        $from   = trim( (string) $from );
+        $to     = trim( (string) $to );
+        if ( '' === $from || '' === $to ) {
+            return $label . ', οποιαδήποτε ώρα ' . self::PICKUP_DEFAULT_FROM . '–' . self::PICKUP_DEFAULT_TO;
+        }
+        return $label . ', ' . $from . '–' . $to;
     }
 }
