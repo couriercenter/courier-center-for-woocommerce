@@ -3,7 +3,7 @@
  * Επιστροφές: χτίσιμο του payload δημιουργίας αποστολής επιστροφής.
  *
  * Καθαρή κλάση (χωρίς βάση, χωρίς API): επικυρώνει το αίτημα και επιστρέφει το
- * payload για Drop Off ή BOX NOW. Η αποστολή γίνεται από την υπηρεσία επιστροφών.
+ * payload για Drop Off, Pickup ή BOX NOW. Η αποστολή γίνεται από την υπηρεσία επιστροφών.
  * Το payload της κανονικής αποστολής (CC_Shipment_Builder) δεν αγγίζεται.
  */
 
@@ -15,7 +15,8 @@ class CC_Return_Payload {
 
     /**
      * @param array      $req       Γραμμή αιτήματος: method, original_awb, reference_token, return_account_code,
-     *                              requestor_account, shipper_details{name,address,phone}, locker_reference, order_id.
+     *                              requestor_account, bill_to, pickup_date, pickup_time_from, pickup_time_to,
+     *                              shipper_details{name,address,city,postcode,phone,courier_notes}, locker_reference, order_id.
      * @param array      $ctx       array( 'UserAlias', 'CredentialValue', 'ApiKey' )
      * @param float|int  $weight_kg Βάρος του (ενός) τεμαχίου από τις ρυθμίσεις.
      * @return array|WP_Error
@@ -23,10 +24,11 @@ class CC_Return_Payload {
     public static function build( array $req, array $ctx, $weight_kg ) {
         $method = isset( $req['method'] ) ? (string) $req['method'] : '';
 
-        // Σειρά ελέγχων: μέθοδος, awb, token, λογαριασμός, όνομα, διεύθυνση (Drop Off), τηλέφωνο, locker
-        if ( CC_Returns_Rules::METHOD_DROPOFF !== $method && CC_Returns_Rules::METHOD_BOXNOW !== $method ) {
+        // Σειρά ελέγχων: μέθοδος, awb, token, λογαριασμός, όνομα, διεύθυνση (Drop Off/Pickup), πόλη/ΤΚ/ημερομηνία/διάστημα (Pickup), τηλέφωνο, locker
+        if ( ! in_array( $method, array( CC_Returns_Rules::METHOD_DROPOFF, CC_Returns_Rules::METHOD_PICKUP, CC_Returns_Rules::METHOD_BOXNOW ), true ) ) {
             return new WP_Error( 'cc_return_method_unavailable', 'Η επιλεγμένη μέθοδος επιστροφής δεν είναι διαθέσιμη.' );
         }
+        $pickup = CC_Returns_Rules::METHOD_PICKUP === $method;
 
         $awb = isset( $req['original_awb'] ) ? trim( (string) $req['original_awb'] ) : '';
         if ( '' === $awb ) {
@@ -55,8 +57,30 @@ class CC_Return_Payload {
         }
 
         $address = isset( $details['address'] ) ? trim( (string) $details['address'] ) : '';
-        if ( CC_Returns_Rules::METHOD_DROPOFF === $method && '' === $address ) {
+        if ( CC_Returns_Rules::METHOD_BOXNOW !== $method && '' === $address ) {
             return new WP_Error( 'cc_return_missing_address', 'Λείπει η διεύθυνση του αποστολέα της επιστροφής.' );
+        }
+
+        $city     = isset( $details['city'] ) ? trim( (string) $details['city'] ) : '';
+        $postcode = isset( $details['postcode'] ) ? preg_replace( '/\s+/', '', (string) $details['postcode'] ) : '';
+        $date     = isset( $req['pickup_date'] ) ? (string) $req['pickup_date'] : '';
+        $from     = isset( $req['pickup_time_from'] ) ? trim( (string) $req['pickup_time_from'] ) : '';
+        $to       = isset( $req['pickup_time_to'] ) ? trim( (string) $req['pickup_time_to'] ) : '';
+        if ( $pickup ) {
+            if ( '' === $city ) {
+                return new WP_Error( 'cc_return_missing_city', 'Λείπει η πόλη της διεύθυνσης παραλαβής.' );
+            }
+            if ( 1 !== preg_match( '/^\d{5}$/', $postcode ) ) {
+                return new WP_Error( 'cc_return_invalid_postcode', 'Ο ΤΚ της διεύθυνσης παραλαβής πρέπει να έχει 5 ψηφία.' );
+            }
+            $d = DateTimeImmutable::createFromFormat( '!Y-m-d', $date );
+            if ( ! $d || $d->format( 'Y-m-d' ) !== $date ) {
+                return new WP_Error( 'cc_return_pickup_date', CC_Returns_Rules::MSG_PICKUP_DATE );
+            }
+            $window = CC_Returns_Rules::validate_pickup_window( $from, $to );
+            if ( is_wp_error( $window ) ) {
+                return $window;
+            }
         }
 
         // Το τηλέφωνο έχει ήδη επιλεγεί στην υποβολή· ξαναελέγχεται και κανονικοποιείται
@@ -86,6 +110,11 @@ class CC_Return_Payload {
         );
         if ( CC_Returns_Rules::METHOD_BOXNOW === $method ) {
             $shipper = array_merge( $shipper, CC_Returns_Rules::BOXNOW_SHIPPER );
+        } elseif ( $pickup ) {
+            $shipper['Address'] = $address;
+            $shipper['City']    = $city;
+            $shipper['Area']    = $city;
+            $shipper['ZipCode'] = $postcode;
         } else {
             $shipper['Address'] = $address;
             $shipper            = array_merge( $shipper, CC_Returns_Rules::DROPOFF_SHIPPER );
@@ -113,7 +142,7 @@ class CC_Return_Payload {
             'Shipper'      => $shipper,
             // Παραλήπτης = ο λογαριασμός επιστροφών (μόνο CarrierBillingAccount)
             'Consignee'    => array( 'CarrierBillingAccount' => $account ),
-            'BillTo'       => 'Requestor',
+            'BillTo'       => ( isset( $req['bill_to'] ) && 'Consignee' === $req['bill_to'] ) ? 'Consignee' : 'Requestor',
             'Reference1'   => $awb,
             'Reference2'   => $token,
             'NoOfItems'    => 1,
@@ -122,6 +151,18 @@ class CC_Return_Payload {
 
         if ( CC_Returns_Rules::METHOD_BOXNOW === $method ) {
             $payload['LockerPickupInfo'] = array( 'reference' => $locker );
+        }
+
+        if ( $pickup ) {
+            // Η ημερομηνία παραλαβής πάει στο ShipmentDate (επιβεβαιωμένο spike 2026-10-12)· χωρίς διάστημα → όλο το ωράριο
+            unset( $payload['shipmentDate'] );
+            $payload['ShipmentDate']           = $date;
+            $notes                             = isset( $details['courier_notes'] ) ? trim( preg_replace( '/\s+/u', ' ', (string) $details['courier_notes'] ) ) : '';
+            $payload['CollectionInstructions'] = array(
+                'TimeFrom' => '' !== $from ? $from : CC_Returns_Rules::PICKUP_DEFAULT_FROM,
+                'TimeTo'   => '' !== $to ? $to : CC_Returns_Rules::PICKUP_DEFAULT_TO,
+                'Comments' => mb_substr( $notes, 0, CC_Returns_Rules::COURIER_NOTES_MAX, 'UTF-8' ),
+            );
         }
 
         return $payload;
