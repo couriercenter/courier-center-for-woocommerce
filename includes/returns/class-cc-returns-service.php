@@ -74,6 +74,20 @@ class CC_Returns_Service {
         return isset( $labels[ $method ] ) ? $labels[ $method ] : $method;
     }
 
+    /** «Τρίτη 13/10/2026, 09:00–13:00» για αίτημα Pickup ('' αν δεν υπάρχει ημερομηνία). */
+    public static function pickup_label( array $row ) {
+        return CC_Returns_Rules::pickup_text(
+            isset( $row['pickup_date'] ) ? $row['pickup_date'] : '',
+            isset( $row['pickup_time_from'] ) ? $row['pickup_time_from'] : '',
+            isset( $row['pickup_time_to'] ) ? $row['pickup_time_to'] : ''
+        );
+    }
+
+    /** Τώρα, στη ζώνη ώρας του site (για ημερομηνίες παραλαβής). */
+    public static function now_local() {
+        return new DateTimeImmutable( 'now', wp_timezone() );
+    }
+
     /**
      * Τα μηνύματα επιτυχίας δημιουργίας (§7.4 / §10.6) ως array( array( κείμενο, τιμή, είναι_κωδικός ), ... ).
      * Κοινό για το My Account και τα emails πελάτη. Αν λείπει ο κωδικός BOX NOW (ή το μέγεθος), η γραμμή παραλείπεται.
@@ -89,6 +103,15 @@ class CC_Returns_Service {
             if ( isset( CC_Returns_Rules::LOCKER_SIZES[ $row['locker_size'] ] ) ) {
                 $parts[] = array( 'Επιλεγμένο μέγεθος: ', CC_Returns_Rules::LOCKER_SIZES[ $row['locker_size'] ]['label'], false );
             }
+        } elseif ( CC_Returns_Rules::METHOD_PICKUP === $row['method'] ) {
+            $sd   = is_array( $row['shipper_details'] ) ? $row['shipper_details'] : array();
+            $addr = trim( ( isset( $sd['address'] ) ? $sd['address'] : '' ) . ', ' . ( isset( $sd['city'] ) ? $sd['city'] : '' ) . ' ' . ( isset( $sd['postcode'] ) ? $sd['postcode'] : '' ), ' ,' );
+            $parts[] = array( 'Ο courier θα παραλάβει το δέμα από τη διεύθυνση: ', $addr, false );
+            $label   = self::pickup_label( $row );
+            if ( '' !== $label ) {
+                $parts[] = array( 'Παραλαβή: ', $label, false );
+            }
+            $parts[] = array( 'Αριθμός αποστολής επιστροφής: ', (string) $row['return_awb'], false );
         } else {
             $parts[] = array( 'Μπορείτε να παραδώσετε το δέμα σας σε κατάστημα Courier Center.', '', false );
             $parts[] = array( 'Αριθμός αποστολής επιστροφής: ', (string) $row['return_awb'], false );
@@ -174,7 +197,8 @@ class CC_Returns_Service {
     // ── Υποβολή / απόφαση ────────────────────────────────────────────────────
 
     /**
-     * $data: request_uid, method, items[item_id => qty], reason, name, mobile, landline, locker_size.
+     * $data: request_uid, method, items[item_id => qty], reason, name, mobile, landline, locker_size,
+     *        pickup_address, pickup_city, pickup_postcode, pickup_date, pickup_time_from, pickup_time_to, courier_notes.
      *
      * @return int|WP_Error id. Ίδιο request_uid → επιστρέφει το υπάρχον id.
      */
@@ -232,6 +256,45 @@ class CC_Returns_Service {
             }
         }
 
+        $pickup = CC_Returns_Rules::METHOD_PICKUP === $method;
+        $pk     = array( 'address' => '', 'city' => '', 'postcode' => '', 'date' => null, 'from' => null, 'to' => null, 'notes' => '' );
+        if ( $pickup ) {
+            $field = function ( $key ) use ( $data ) {
+                return trim( sanitize_text_field( isset( $data[ $key ] ) && is_scalar( $data[ $key ] ) ? (string) $data[ $key ] : '' ) );
+            };
+            $pk['address']  = $field( 'pickup_address' );
+            $pk['city']     = $field( 'pickup_city' );
+            $pk['postcode'] = preg_replace( '/\s+/', '', $field( 'pickup_postcode' ) );
+            if ( '' === $pk['address'] ) {
+                return new WP_Error( 'cc_return_missing_address', 'Συμπληρώστε τη διεύθυνση παραλαβής.' );
+            }
+            if ( '' === $pk['city'] ) {
+                return new WP_Error( 'cc_return_missing_city', 'Συμπληρώστε την πόλη της διεύθυνσης παραλαβής.' );
+            }
+            if ( 1 !== preg_match( '/^\d{5}$/', $pk['postcode'] ) ) {
+                return new WP_Error( 'cc_return_invalid_postcode', 'Ο ΤΚ της διεύθυνσης παραλαβής πρέπει να έχει 5 ψηφία.' );
+            }
+            $date = $field( 'pickup_date' );
+            $ok   = CC_Returns_Rules::validate_pickup_date( $date, self::now_local() );
+            if ( is_wp_error( $ok ) ) {
+                return $ok;
+            }
+            $from = $field( 'pickup_time_from' );
+            $to   = $field( 'pickup_time_to' );
+            $ok   = CC_Returns_Rules::validate_pickup_window( $from, $to );
+            if ( is_wp_error( $ok ) ) {
+                return $ok;
+            }
+            $notes = trim( sanitize_textarea_field( isset( $data['courier_notes'] ) && is_scalar( $data['courier_notes'] ) ? (string) $data['courier_notes'] : '' ) );
+            if ( mb_strlen( $notes, 'UTF-8' ) > CC_Returns_Rules::COURIER_NOTES_MAX ) {
+                return new WP_Error( 'cc_return_notes_length', 'Οι οδηγίες για τον courier μπορούν να έχουν έως 200 χαρακτήρες.' );
+            }
+            $pk['date']  = $date;
+            $pk['from']  = '' !== $from ? $from : null;
+            $pk['to']    = '' !== $to ? $to : null;
+            $pk['notes'] = $notes;
+        }
+
         $consignee = ( new CC_Shipment_Builder( $order ) )->get_consignee_fields();
         $shipper   = trim( (string) $order->get_meta( '_cc_pickup_point' ) );
 
@@ -247,13 +310,17 @@ class CC_Returns_Service {
             'original_awb'          => trim( (string) $order->get_meta( '_cc_voucher_number' ) ),
             'original_shipper_code' => '' !== $shipper ? $shipper : (string) get_option( 'cc_wc_billing_account', '' ),
             'shipper_details'       => array(
-                'name'     => $name,
-                'address'  => $consignee['address'],
-                'city'     => $consignee['city'],
-                'postcode' => $consignee['postcode'],
-                'phone'    => $phone['phone'],
-                'email'    => $order->get_billing_email(),
+                'name'          => $name,
+                'address'       => $pickup ? $pk['address'] : $consignee['address'],
+                'city'          => $pickup ? $pk['city'] : $consignee['city'],
+                'postcode'      => $pickup ? $pk['postcode'] : $consignee['postcode'],
+                'phone'         => $phone['phone'],
+                'email'         => $order->get_billing_email(),
+                'courier_notes' => $pk['notes'],
             ),
+            'pickup_date'           => $pk['date'],
+            'pickup_time_from'      => $pk['from'],
+            'pickup_time_to'        => $pk['to'],
             'locker_size'           => $locker_size,
             'locker_reference'      => CC_Returns_Rules::locker_reference( $locker_size ),
         );
