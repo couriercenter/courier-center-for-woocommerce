@@ -83,6 +83,11 @@ class CC_Returns_Service {
         );
     }
 
+    /** Η παραγγελία έχει AWB Courier Center που δεν έχει ακυρωθεί. */
+    public static function has_active_awb( WC_Order $order ) {
+        return '' !== trim( (string) $order->get_meta( '_cc_voucher_number' ) ) && '1' !== (string) $order->get_meta( '_cc_voided' );
+    }
+
     /** Τώρα, στη ζώνη ώρας του site (για ημερομηνίες παραλαβής). */
     public static function now_local() {
         return new DateTimeImmutable( 'now', wp_timezone() );
@@ -224,6 +229,124 @@ class CC_Returns_Service {
             return new WP_Error( 'cc_return_method_unavailable', 'Η επιλεγμένη μέθοδος επιστροφής δεν είναι διαθέσιμη.' );
         }
 
+        $row = $this->build_request( $order, $method, $data );
+        if ( is_wp_error( $row ) ) {
+            return $row;
+        }
+        $row = array_merge( array(
+            'request_uid'     => $uid,
+            'reference_token' => self::new_token(),
+            'customer_id'     => (int) $user_id,
+            'status'          => CC_Returns_Rules::ST_PENDING,
+        ), $row );
+
+        $id = CC_Returns_Repo::insert( $row );
+        if ( is_wp_error( $id ) ) {
+            // Ταυτόχρονο request με το ίδιο uid κέρδισε τον αγώνα
+            $existing = $this->existing_for_uid( $uid, $order, $user_id );
+            if ( null !== $existing ) {
+                return $existing;
+            }
+            if ( 'duplicate' === $id->get_error_code() ) {
+                // Σύγκρουση token (απίθανη): νέο token, μία φορά
+                $row['reference_token'] = self::new_token();
+                $id                     = CC_Returns_Repo::insert( $row );
+            }
+            if ( is_wp_error( $id ) ) {
+                $existing = $this->existing_for_uid( $uid, $order, $user_id );
+                if ( null !== $existing ) {
+                    return $existing;
+                }
+                $this->log( 'error', sprintf( 'Επιστροφή: αποτυχία καταχώρισης (παραγγελία %d, %s): %s', $order->get_id(), $method, $id->get_error_code() ) );
+                return new WP_Error( 'cc_return_db', 'Δεν ήταν δυνατή η καταχώριση του αιτήματος. Δοκιμάστε ξανά.' );
+            }
+        }
+
+        $this->log( 'info', sprintf( 'Επιστροφή #%d: νέο αίτημα (παραγγελία %d, %s).', $id, $order->get_id(), $method ) );
+
+        if ( CC_Returns_Settings::require_approval() ) {
+            do_action( 'cc_return_request_received', $id );
+            return $id;
+        }
+
+        // Χωρίς έγκριση: πρώτα η δημιουργία. Αν πέτυχε, ο πελάτης παίρνει μόνο το «δημιουργήθηκε»·
+        // αλλιώς (αποτυχία / έλεγχος σε εξέλιξη) το «ελήφθη».
+        if ( CC_Returns_Repo::transition( $id, array( CC_Returns_Rules::ST_PENDING ), CC_Returns_Rules::ST_APPROVED, array( 'approved_at' => current_time( 'mysql' ) ) ) ) {
+            $this->create( $id ); // το αποτέλεσμα φαίνεται στο status του αιτήματος
+        }
+        $fresh = CC_Returns_Repo::get( $id );
+        if ( ! $fresh || CC_Returns_Rules::ST_CREATED !== $fresh['status'] ) {
+            do_action( 'cc_return_request_received', $id );
+        }
+        return $id;
+    }
+
+    /**
+     * Επιστροφή που δημιουργεί το κατάστημα (admin): χωρίς τους κανόνες επιλεξιμότητας του πελάτη
+     * (κατάσταση, προθεσμία, ενεργές μέθοδοι) — αρκεί το AWB της αρχικής αποστολής. Η γραμμή καταχωρείται
+     * απευθείας approved (origin shop) και η αποστολή δημιουργείται αμέσως· δεν στέλνεται «ελήφθη».
+     *
+     * $data: όπως στο submit() + notify ('1' = email «δημιουργήθηκε» στον πελάτη).
+     *
+     * @return int|WP_Error id (και όταν η δημιουργία απέτυχε — φαίνεται στο status). Ίδιο request_uid → το υπάρχον id.
+     */
+    public function shop_create( WC_Order $order, $admin_id, array $data ) {
+        $uid = isset( $data['request_uid'] ) ? (string) $data['request_uid'] : '';
+        if ( 1 !== preg_match( '/^[A-Za-z0-9_-]{8,32}$/', $uid ) ) {
+            return new WP_Error( 'cc_return_invalid_request', 'Μη έγκυρο αίτημα. Ανανεώστε τη σελίδα και δοκιμάστε ξανά.' );
+        }
+
+        $customer = (int) $order->get_customer_id();
+        $existing = $this->existing_for_uid( $uid, $order, $customer );
+        if ( null !== $existing ) {
+            return $existing;
+        }
+
+        if ( ! self::has_active_awb( $order ) ) {
+            return new WP_Error( 'cc_return_no_awb', 'Η παραγγελία δεν έχει αποστολή Courier Center (AWB)· η επιστροφή δημιουργείται μόνο για παραγγελίες που στάλθηκαν με Courier Center.' );
+        }
+
+        $method = isset( $data['method'] ) ? (string) $data['method'] : '';
+        if ( ! in_array( $method, CC_Returns_Rules::METHODS_ORDER, true ) ) {
+            return new WP_Error( 'cc_return_method_unavailable', 'Η επιλεγμένη μέθοδος επιστροφής δεν είναι διαθέσιμη.' );
+        }
+
+        $row = $this->build_request( $order, $method, $data );
+        if ( is_wp_error( $row ) ) {
+            return $row;
+        }
+        $row = array_merge( array(
+            'request_uid'     => $uid,
+            'reference_token' => self::new_token(),
+            'customer_id'     => $customer,
+            'status'          => CC_Returns_Rules::ST_APPROVED,
+            'origin'          => 'shop',
+            'notify_customer' => empty( $data['notify'] ) ? 0 : 1,
+            'decided_by'      => (int) $admin_id,
+            'approved_at'     => current_time( 'mysql' ),
+        ), $row );
+
+        $id = CC_Returns_Repo::insert( $row );
+        if ( is_wp_error( $id ) ) {
+            $existing = $this->existing_for_uid( $uid, $order, $customer );
+            if ( null !== $existing ) {
+                return $existing;
+            }
+            $this->log( 'error', sprintf( 'Επιστροφή: αποτυχία καταχώρισης από το κατάστημα (παραγγελία %d, %s): %s', $order->get_id(), $method, $id->get_error_code() ) );
+            return new WP_Error( 'cc_return_db', 'Δεν ήταν δυνατή η καταχώριση της επιστροφής. Δοκιμάστε ξανά.' );
+        }
+
+        $this->log( 'info', sprintf( 'Επιστροφή #%d: δημιουργία από το κατάστημα (παραγγελία %d, %s, χρήστης %d).', $id, $order->get_id(), $method, (int) $admin_id ) );
+        $this->create( $id ); // το αποτέλεσμα φαίνεται στο status του αιτήματος
+        return (int) $id;
+    }
+
+    /**
+     * Κοινοί έλεγχοι πεδίων (προϊόντα, αιτιολογία, όνομα, τηλέφωνο, BOX NOW, Pickup) για πελάτη και κατάστημα.
+     *
+     * @return array|WP_Error Τα πεδία της γραμμής χωρίς request_uid/reference_token/customer_id/status.
+     */
+    private function build_request( WC_Order $order, $method, array $data ) {
         $items = $this->validate_items( $order, isset( $data['items'] ) ? $data['items'] : array() );
         if ( is_wp_error( $items ) ) {
             return $items;
@@ -299,11 +422,7 @@ class CC_Returns_Service {
         $shipper   = trim( (string) $order->get_meta( '_cc_pickup_point' ) );
 
         $row = array(
-            'request_uid'           => $uid,
-            'reference_token'       => self::new_token(),
             'order_id'              => $order->get_id(),
-            'customer_id'           => (int) $user_id,
-            'status'                => CC_Returns_Rules::ST_PENDING,
             'method'                => $method,
             'items'                 => $items,
             'reason'                => $reason,
@@ -325,45 +444,7 @@ class CC_Returns_Service {
             'locker_reference'      => CC_Returns_Rules::locker_reference( $locker_size ),
         );
 
-        $id = CC_Returns_Repo::insert( $row );
-        if ( is_wp_error( $id ) ) {
-            // Ταυτόχρονο request με το ίδιο uid κέρδισε τον αγώνα
-            $existing = $this->existing_for_uid( $uid, $order, $user_id );
-            if ( null !== $existing ) {
-                return $existing;
-            }
-            if ( 'duplicate' === $id->get_error_code() ) {
-                // Σύγκρουση token (απίθανη): νέο token, μία φορά
-                $row['reference_token'] = self::new_token();
-                $id                     = CC_Returns_Repo::insert( $row );
-            }
-            if ( is_wp_error( $id ) ) {
-                $existing = $this->existing_for_uid( $uid, $order, $user_id );
-                if ( null !== $existing ) {
-                    return $existing;
-                }
-                $this->log( 'error', sprintf( 'Επιστροφή: αποτυχία καταχώρισης (παραγγελία %d, %s): %s', $order->get_id(), $method, $id->get_error_code() ) );
-                return new WP_Error( 'cc_return_db', 'Δεν ήταν δυνατή η καταχώριση του αιτήματος. Δοκιμάστε ξανά.' );
-            }
-        }
-
-        $this->log( 'info', sprintf( 'Επιστροφή #%d: νέο αίτημα (παραγγελία %d, %s).', $id, $order->get_id(), $method ) );
-
-        if ( CC_Returns_Settings::require_approval() ) {
-            do_action( 'cc_return_request_received', $id );
-            return $id;
-        }
-
-        // Χωρίς έγκριση: πρώτα η δημιουργία. Αν πέτυχε, ο πελάτης παίρνει μόνο το «δημιουργήθηκε»·
-        // αλλιώς (αποτυχία / έλεγχος σε εξέλιξη) το «ελήφθη».
-        if ( CC_Returns_Repo::transition( $id, array( CC_Returns_Rules::ST_PENDING ), CC_Returns_Rules::ST_APPROVED, array( 'approved_at' => current_time( 'mysql' ) ) ) ) {
-            $this->create( $id ); // το αποτέλεσμα φαίνεται στο status του αιτήματος
-        }
-        $fresh = CC_Returns_Repo::get( $id );
-        if ( ! $fresh || CC_Returns_Rules::ST_CREATED !== $fresh['status'] ) {
-            do_action( 'cc_return_request_received', $id );
-        }
-        return $id;
+        return $row;
     }
 
     /** pending_approval → approved → create(). @return array|WP_Error */

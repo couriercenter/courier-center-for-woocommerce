@@ -13,13 +13,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 class CC_Returns_Repo {
 
-    const DB_VERSION = '1';
+    const DB_VERSION = '2'; // 2: origin, notify_customer (επιστροφή από το κατάστημα)
     const DB_OPTION  = 'cc_wc_returns_db_version';
     const LOCK_TTL   = 180; // δευτερόλεπτα· πόσο ζει το κλείδωμα (locked_at) της κατάστασης «creating»
 
     // Στήλες που επιτρέπεται να γράψει ο καλών (whitelist). Το id δεν είναι ποτέ γράψιμο.
     const COLUMNS = array(
-        'request_uid', 'reference_token', 'order_id', 'customer_id', 'status', 'method', 'items', 'reason',
+        'request_uid', 'reference_token', 'order_id', 'customer_id', 'status', 'method', 'items', 'reason', 'origin', 'notify_customer',
         'original_awb', 'original_shipper_code', 'return_account_code', 'requestor_account', 'shipper_details',
         'pickup_date', 'pickup_time_from', 'pickup_time_to', 'locker_size', 'locker_reference',
         'return_awb', 'return_shipment_number', 'inbound_shipment_number', 'shipment_master_id',
@@ -32,7 +32,7 @@ class CC_Returns_Repo {
     const JSON_COLUMNS = array( 'items', 'shipper_details' );
 
     // Στήλες που επιστρέφονται ως int
-    const INT_COLUMNS = array( 'id', 'order_id', 'customer_id', 'attempts', 'tracking_final', 'decided_by' );
+    const INT_COLUMNS = array( 'id', 'order_id', 'customer_id', 'attempts', 'tracking_final', 'decided_by', 'notify_customer' );
 
     public static function table() {
         global $wpdb;
@@ -61,6 +61,8 @@ class CC_Returns_Repo {
   method varchar(32) NOT NULL,
   items longtext NOT NULL,
   reason text NULL,
+  origin varchar(10) NOT NULL DEFAULT 'customer',
+  notify_customer tinyint(1) NOT NULL DEFAULT 1,
   original_awb varchar(32) NOT NULL DEFAULT '',
   original_shipper_code varchar(32) NOT NULL DEFAULT '',
   return_account_code varchar(32) NOT NULL DEFAULT '',

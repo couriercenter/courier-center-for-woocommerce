@@ -3,7 +3,8 @@
  * Επιστροφές: διαχείριση (σελίδα «Επιστροφές» και meta box στην παραγγελία).
  *
  * - Submenu «Επιστροφές» (tabs: Αιτήματα | Ρυθμίσεις) με badge για αιτήματα που περιμένουν ενέργεια.
- * - Meta box «Επιστροφές Courier Center» στην οθόνη της παραγγελίας (legacy + HPOS), μόνο όταν υπάρχουν αιτήματα.
+ * - Meta box «Επιστροφές Courier Center» στην οθόνη της παραγγελίας (legacy + HPOS), όταν υπάρχουν αιτήματα ή AWB,
+ *   με σύνδεσμο «Νέα επιστροφή» (CC_Returns_Admin_New) για παραγγελίες με AWB.
  * - Ενέργειες (έγκριση, απόρριψη, δημιουργία, επανάληψη, έλεγχος, tracking, voucher) ως συνδέσμοι προς
  *   admin-post.php?action=cc_return_action με nonce ανά αίτημα. Δεν υπάρχουν <form>/<button> μέσα στο
  *   meta box, γιατί αυτό βρίσκεται μέσα στη φόρμα της παραγγελίας.
@@ -30,9 +31,13 @@ class CC_Returns_Admin {
     /** @var CC_API */
     private $api;
 
+    /** @var CC_Returns_Admin_New */
+    public $new_return;
+
     public function __construct( ?CC_Returns_Service $service = null, ?CC_API $api = null ) {
         $this->api     = $api ? $api : new CC_API();
         $this->service = $service ? $service : new CC_Returns_Service( $this->api );
+        $this->new_return = new CC_Returns_Admin_New( $this->service );
 
         add_action( 'add_meta_boxes_shop_order', array( $this, 'add_meta_box_legacy' ) );
         add_action( 'add_meta_boxes_woocommerce_page_wc-orders', array( $this, 'add_meta_box_hpos' ) );
@@ -89,7 +94,8 @@ class CC_Returns_Admin {
     public function render_page() {
         // Ληγμένα «creating» → needs_verification, ώστε να φαίνεται αμέσως η ενέργεια ελέγχου (όχι στο επόμενο cron)
         $this->service->release_stale_locks();
-        $tab =( isset( $_GET['tab'] ) && 'settings' === sanitize_key( wp_unslash( $_GET['tab'] ) ) ) ? 'settings' : 'requests'; // phpcs:ignore WordPress.Security.NonceVerification
+        $tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
+        $tab = in_array( $tab, array( 'settings', 'new' ), true ) ? $tab : 'requests';
         ?>
         <div class="wrap">
             <h1>↩️ Επιστροφές</h1>
@@ -100,6 +106,9 @@ class CC_Returns_Admin {
             <?php
             if ( 'settings' === $tab ) {
                 CC_Returns_Settings::render_tab(); // καλεί ήδη settings_errors()
+            } elseif ( 'new' === $tab ) {
+                $order_id = isset( $_GET['order_id'] ) ? absint( $_GET['order_id'] ) : 0; // phpcs:ignore WordPress.Security.NonceVerification
+                $this->new_return->render( $order_id ? wc_get_order( $order_id ) : false );
             } else {
                 $table = $this->list_table();
                 $table->prepare_items();
@@ -212,7 +221,12 @@ class CC_Returns_Admin {
 
     private function add_meta_box( $post_or_order, $screen ) {
         $order_id = self::order_id_of( $post_or_order );
-        if ( ! $order_id || ! CC_Returns_Repo::for_order( $order_id ) ) {
+        if ( ! $order_id ) {
+            return;
+        }
+        $order = wc_get_order( $order_id );
+        $awb   = $order ? trim( (string) $order->get_meta( '_cc_voucher_number' ) ) : '';
+        if ( '' === $awb && ! CC_Returns_Repo::for_order( $order_id ) ) {
             return;
         }
         add_meta_box(
@@ -249,11 +263,18 @@ class CC_Returns_Admin {
         foreach ( $rows as $row ) {
             $this->render_request( $row );
         }
+        if ( $order && CC_Returns_Service::has_active_awb( $order ) ) {
+            if ( ! $rows ) {
+                echo '<p>' . esc_html( 'Δεν υπάρχουν επιστροφές για αυτή την παραγγελία.' ) . '</p>';
+            }
+            echo '<p><a class="button" href="' . esc_url( CC_Returns_Admin_New::url( $order_id ) ) . '">' . esc_html( '+ Νέα επιστροφή' ) . '</a></p>';
+        }
     }
 
     private function render_request( array $row ) {
         $lines = array(
             '#Αιτήματος'              => '#' . (int) $row['id'],
+            'Από'                     => ( isset( $row['origin'] ) && 'shop' === $row['origin'] ) ? 'Κατάστημα' : 'Πελάτης',
             'Πελάτης'                 => self::customer_name( $row ),
             'Μέθοδος'                 => CC_Returns_Service::method_label( $row['method'] ),
             'Κατάσταση'               => CC_Returns_Service::status_label( $row['status'] ),

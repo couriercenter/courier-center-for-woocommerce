@@ -186,7 +186,11 @@ class CC_Returns_List_Table extends WP_List_Table {
     }
 
     public function column_customer( $item ) {
-        return esc_html( CC_Returns_Admin::customer_name( $item ) );
+        $html = esc_html( CC_Returns_Admin::customer_name( $item ) );
+        if ( isset( $item['origin'] ) && 'shop' === $item['origin'] ) {
+            $html .= '<br><small>' . esc_html( 'Από: Κατάστημα' ) . '</small>';
+        }
+        return $html;
     }
 
     public function column_method( $item ) {

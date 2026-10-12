@@ -247,12 +247,10 @@ class CC_Returns_Account {
         $reason   = (string) $this->posted( 'reason', '' );
         $size     = (string) $this->posted( 'locker_size', '' );
         $qtys     = (array) $this->posted( 'qty', array() );
-        $dates   = CC_Returns_Rules::pickup_dates( CC_Returns_Service::now_local() );
         $p_addr  = (string) $this->posted( 'pickup_address', $consignee['address'] );
         $p_city  = (string) $this->posted( 'pickup_city', $consignee['city'] );
         $p_pc    = (string) $this->posted( 'pickup_postcode', $consignee['postcode'] );
         $p_date  = (string) $this->posted( 'pickup_date', '' );
-        $p_date  = in_array( $p_date, $dates, true ) ? $p_date : $dates[0];
         $p_from  = (string) $this->posted( 'pickup_time_from', '' );
         $p_to    = (string) $this->posted( 'pickup_time_to', '' );
         $p_notes = (string) $this->posted( 'courier_notes', '' );
@@ -297,34 +295,10 @@ class CC_Returns_Account {
         }
 
         if ( in_array( CC_Returns_Rules::METHOD_PICKUP, $enabled, true ) ) {
-            echo '<fieldset class="cc-return-pickup"' . ( $pickup_on ? '' : ' style="display:none"' ) . '><legend>Στοιχεία παραλαβής</legend>';
-            echo '<p class="form-row"><label for="cc-return-pickup-address">Διεύθυνση παραλαβής</label>';
-            echo '<input type="text" id="cc-return-pickup-address" name="pickup_address" value="' . esc_attr( $p_addr ) . '" maxlength="100"></p>';
-            echo '<p class="form-row"><label for="cc-return-pickup-city">Πόλη</label>';
-            echo '<input type="text" id="cc-return-pickup-city" name="pickup_city" value="' . esc_attr( $p_city ) . '" maxlength="60"></p>';
-            echo '<p class="form-row"><label for="cc-return-pickup-postcode">ΤΚ</label>';
-            echo '<input type="text" id="cc-return-pickup-postcode" name="pickup_postcode" value="' . esc_attr( $p_pc ) . '" maxlength="6" inputmode="numeric"></p>';
-
-            echo '<p class="form-row"><label for="cc-return-pickup-date">Ημερομηνία παραλαβής</label><select id="cc-return-pickup-date" name="pickup_date">';
-            foreach ( $dates as $d ) {
-                echo '<option value="' . esc_attr( $d ) . '"' . ( $d === $p_date ? ' selected' : '' ) . '>' . esc_html( CC_Returns_Rules::pickup_date_label( $d ) ) . '</option>';
-            }
-            echo '</select></p>';
-
-            echo '<p class="form-row cc-return-window"><span>Χρονικό διάστημα (προαιρετικό, τουλάχιστον 4 ώρες, 09:00–17:00)</span><br>';
-            echo '<label for="cc-return-pickup-from">Από</label> <select id="cc-return-pickup-from" name="pickup_time_from"><option value="">—</option>';
-            foreach ( CC_Returns_Rules::pickup_hours_from() as $h ) {
-                echo '<option value="' . esc_attr( $h ) . '"' . ( $h === $p_from ? ' selected' : '' ) . '>' . esc_html( $h ) . '</option>';
-            }
-            echo '</select> <label for="cc-return-pickup-to">Έως</label> <select id="cc-return-pickup-to" name="pickup_time_to"><option value="">—</option>';
-            foreach ( CC_Returns_Rules::pickup_hours_to() as $h ) {
-                echo '<option value="' . esc_attr( $h ) . '"' . ( $h === $p_to ? ' selected' : '' ) . '>' . esc_html( $h ) . '</option>';
-            }
-            echo '</select></p>';
-
-            echo '<p class="form-row"><label for="cc-return-courier-notes">Οδηγίες για τον courier (προαιρετικό)</label>';
-            echo '<textarea id="cc-return-courier-notes" name="courier_notes" rows="2" maxlength="' . esc_attr( CC_Returns_Rules::COURIER_NOTES_MAX ) . '">' . esc_textarea( $p_notes ) . '</textarea></p>';
-            echo '</fieldset>';
+            self::render_pickup_fieldset( array(
+                'address' => $p_addr, 'city' => $p_city, 'postcode' => $p_pc, 'date' => $p_date,
+                'from'    => $p_from, 'to' => $p_to, 'notes' => $p_notes,
+            ), $pickup_on );
         }
 
         echo '<p class="form-row"><label for="cc-return-name">Ονοματεπώνυμο αποστολέα</label>';
@@ -463,19 +437,70 @@ class CC_Returns_Account {
         }
         wp_enqueue_style( 'cc-returns', CC_WC_PLUGIN_URL . 'assets/css/cc-returns.css', array(), CC_WC_VERSION );
         wp_enqueue_script( 'cc-returns', CC_WC_PLUGIN_URL . 'assets/js/cc-returns.js', array( 'jquery' ), CC_WC_VERSION, true );
-        wp_localize_script( 'cc-returns', 'ccReturns', array(
-            'msgPhone'   => CC_Returns_Rules::MSG_PHONE,
-            'msgMobile'  => CC_Returns_Rules::MSG_MOBILE,
-            'msgItems'   => self::MSG_NO_ITEMS,
-            'msgSize'    => 'Επιλέξτε μέγεθος BOX NOW locker (Μικρό, Μεσαίο ή Μεγάλο).',
-            'copied'     => 'Αντιγράφηκε',
-            'boxnow'     => CC_Returns_Rules::METHOD_BOXNOW,
+        wp_localize_script( 'cc-returns', 'ccReturns', self::script_config() );
+    }
+    /**
+     * Τα πεδία παραλαβής (Pickup) — κοινά για τη φόρμα πελάτη και τη «Νέα επιστροφή» του καταστήματος.
+     *
+     * @param array $v       address, city, postcode, date, from, to, notes (τιμές για προσυμπλήρωση)
+     * @param bool  $visible Ορατό (επιλεγμένη μέθοδος Pickup)
+     */
+    public static function render_pickup_fieldset( array $v, $visible ) {
+        $dates     = CC_Returns_Rules::pickup_dates( CC_Returns_Service::now_local() );
+        $p_addr    = isset( $v['address'] ) ? (string) $v['address'] : '';
+        $p_city    = isset( $v['city'] ) ? (string) $v['city'] : '';
+        $p_pc      = isset( $v['postcode'] ) ? (string) $v['postcode'] : '';
+        $p_date    = isset( $v['date'] ) && in_array( (string) $v['date'], $dates, true ) ? (string) $v['date'] : $dates[0];
+        $p_from    = isset( $v['from'] ) ? (string) $v['from'] : '';
+        $p_to      = isset( $v['to'] ) ? (string) $v['to'] : '';
+        $p_notes   = isset( $v['notes'] ) ? (string) $v['notes'] : '';
+        $pickup_on = (bool) $visible;
+
+        echo '<fieldset class="cc-return-pickup"' . ( $pickup_on ? '' : ' style="display:none"' ) . '><legend>Στοιχεία παραλαβής</legend>';
+        echo '<p class="form-row"><label for="cc-return-pickup-address">Διεύθυνση παραλαβής</label>';
+        echo '<input type="text" id="cc-return-pickup-address" name="pickup_address" value="' . esc_attr( $p_addr ) . '" maxlength="100"></p>';
+        echo '<p class="form-row"><label for="cc-return-pickup-city">Πόλη</label>';
+        echo '<input type="text" id="cc-return-pickup-city" name="pickup_city" value="' . esc_attr( $p_city ) . '" maxlength="60"></p>';
+        echo '<p class="form-row"><label for="cc-return-pickup-postcode">ΤΚ</label>';
+        echo '<input type="text" id="cc-return-pickup-postcode" name="pickup_postcode" value="' . esc_attr( $p_pc ) . '" maxlength="6" inputmode="numeric"></p>';
+
+        echo '<p class="form-row"><label for="cc-return-pickup-date">Ημερομηνία παραλαβής</label><select id="cc-return-pickup-date" name="pickup_date">';
+        foreach ( $dates as $d ) {
+            echo '<option value="' . esc_attr( $d ) . '"' . ( $d === $p_date ? ' selected' : '' ) . '>' . esc_html( CC_Returns_Rules::pickup_date_label( $d ) ) . '</option>';
+        }
+        echo '</select></p>';
+
+        echo '<p class="form-row cc-return-window"><span>Χρονικό διάστημα (προαιρετικό, τουλάχιστον 4 ώρες, 09:00–17:00)</span><br>';
+        echo '<label for="cc-return-pickup-from">Από</label> <select id="cc-return-pickup-from" name="pickup_time_from"><option value="">—</option>';
+        foreach ( CC_Returns_Rules::pickup_hours_from() as $h ) {
+            echo '<option value="' . esc_attr( $h ) . '"' . ( $h === $p_from ? ' selected' : '' ) . '>' . esc_html( $h ) . '</option>';
+        }
+        echo '</select> <label for="cc-return-pickup-to">Έως</label> <select id="cc-return-pickup-to" name="pickup_time_to"><option value="">—</option>';
+        foreach ( CC_Returns_Rules::pickup_hours_to() as $h ) {
+            echo '<option value="' . esc_attr( $h ) . '"' . ( $h === $p_to ? ' selected' : '' ) . '>' . esc_html( $h ) . '</option>';
+        }
+        echo '</select></p>';
+
+        echo '<p class="form-row"><label for="cc-return-courier-notes">Οδηγίες για τον courier (προαιρετικό)</label>';
+        echo '<textarea id="cc-return-courier-notes" name="courier_notes" rows="2" maxlength="' . esc_attr( CC_Returns_Rules::COURIER_NOTES_MAX ) . '">' . esc_textarea( $p_notes ) . '</textarea></p>';
+        echo '</fieldset>';
+    }
+
+    /** Ρυθμίσεις/μηνύματα του cc-returns.js (My Account και «Νέα επιστροφή» στο admin). */
+    public static function script_config() {
+        return array(
+            'msgPhone'          => CC_Returns_Rules::MSG_PHONE,
+            'msgMobile'         => CC_Returns_Rules::MSG_MOBILE,
+            'msgItems'          => self::MSG_NO_ITEMS,
+            'msgSize'           => 'Επιλέξτε μέγεθος BOX NOW locker (Μικρό, Μεσαίο ή Μεγάλο).',
+            'copied'            => 'Αντιγράφηκε',
+            'boxnow'            => CC_Returns_Rules::METHOD_BOXNOW,
             'pickup'            => CC_Returns_Rules::METHOD_PICKUP,
             'minHours'          => CC_Returns_Rules::PICKUP_MIN_HOURS,
             'msgPickupAddress'  => 'Συμπληρώστε διεύθυνση και πόλη παραλαβής.',
             'msgPickupPostcode' => 'Ο ΤΚ της διεύθυνσης παραλαβής πρέπει να έχει 5 ψηφία.',
             'msgPickupHalf'     => CC_Returns_Rules::MSG_PICKUP_HALF,
             'msgPickupWindow'   => CC_Returns_Rules::MSG_PICKUP_WINDOW,
-        ) );
+        );
     }
 }
