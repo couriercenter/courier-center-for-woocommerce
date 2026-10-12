@@ -275,8 +275,11 @@ class CC_Returns_Admin {
             $lines['ReturnShipmentNumber']    = $row['return_shipment_number'];
             $lines['InboundShipmentNumber']   = $row['inbound_shipment_number'];
             $lines['ShipmentMasterId']        = $row['shipment_master_id'];
-        } elseif ( CC_Returns_Rules::METHOD_PICKUP === $row['method'] && ! empty( $row['pickup_date'] ) ) {
-            $lines['Παραλαβή'] = trim( $row['pickup_date'] . ' ' . $row['pickup_time_from'] . '–' . $row['pickup_time_to'], ' –' );
+        } elseif ( CC_Returns_Rules::METHOD_PICKUP === $row['method'] ) {
+            $sd = is_array( $row['shipper_details'] ) ? $row['shipper_details'] : array();
+            $lines['Παραλαβή']             = CC_Returns_Service::pickup_label( $row );
+            $lines['Διεύθυνση παραλαβής']  = trim( ( isset( $sd['address'] ) ? $sd['address'] : '' ) . ', ' . ( isset( $sd['city'] ) ? $sd['city'] : '' ) . ' ' . ( isset( $sd['postcode'] ) ? $sd['postcode'] : '' ), ' ,' );
+            $lines['Οδηγίες courier']      = isset( $sd['courier_notes'] ) ? (string) $sd['courier_notes'] : '';
         }
 
         $items = array();
