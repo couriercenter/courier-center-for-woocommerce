@@ -43,6 +43,13 @@ class CC_Returns_Admin {
         add_action( 'add_meta_boxes_woocommerce_page_wc-orders', array( $this, 'add_meta_box_hpos' ) );
         add_action( 'admin_post_' . self::ACTION, array( $this, 'handle_action' ) );
         add_action( 'admin_notices', array( $this, 'show_notice' ) );
+        add_action( 'admin_notices', array( $this, 'pending_notice' ) );
+
+        // Στήλη «Επιστροφή» στη λίστα παραγγελιών (HPOS + legacy)
+        add_filter( 'manage_woocommerce_page_wc-orders_columns', array( $this, 'add_order_column' ) );
+        add_action( 'manage_woocommerce_page_wc-orders_custom_column', array( $this, 'render_order_column_hpos' ), 10, 2 );
+        add_filter( 'manage_edit-shop_order_columns', array( $this, 'add_order_column' ) );
+        add_action( 'manage_shop_order_posts_custom_column', array( $this, 'render_order_column_legacy' ), 10, 2 );
     }
 
     // ── Μενού ────────────────────────────────────────────────────────────────
@@ -60,9 +67,82 @@ class CC_Returns_Admin {
         return $total;
     }
 
-    public function menu_title() {
+    /** « <span class="awaiting-mod">N</span>» όταν υπάρχουν αιτήματα που περιμένουν ενέργεια, αλλιώς ''. */
+    public function badge_html() {
         $n = $this->pending_count();
-        return 'Επιστροφές' . ( $n > 0 ? ' <span class="awaiting-mod">' . (int) $n . '</span>' : '' );
+        return $n > 0 ? ' <span class="awaiting-mod">' . (int) $n . '</span>' : '';
+    }
+
+    public function menu_title() {
+        return 'Επιστροφές' . $this->badge_html();
+    }
+
+    // ── Ειδοποίηση / στήλη παραγγελιών ───────────────────────────────────────
+
+    /**
+     * Ειδοποίηση «Υπάρχουν N αιτήματα επιστροφής…» στον Πίνακα ελέγχου, στις σελίδες WooCommerce και
+     * Courier Center (όχι στη σελίδα των Επιστροφών, που τα δείχνει ήδη). '' όταν δεν υπάρχουν.
+     */
+    public function pending_notice_html( $screen_id ) {
+        $screen_id = (string) $screen_id;
+        if ( ! current_user_can( 'edit_shop_orders' ) || 'courier-center_page_' . self::PAGE === $screen_id ) {
+            return '';
+        }
+        $wanted = 'dashboard' === $screen_id || 'edit-shop_order' === $screen_id || 'shop_order' === $screen_id
+            || 0 === strpos( $screen_id, 'woocommerce_page_' ) || 'toplevel_page_courier-center' === $screen_id
+            || 0 === strpos( $screen_id, 'courier-center_page_' );
+        if ( ! $wanted ) {
+            return '';
+        }
+        $n = $this->pending_count();
+        if ( $n < 1 ) {
+            return '';
+        }
+        $text = 1 === $n ? 'Υπάρχει 1 αίτημα επιστροφής που χρειάζεται ενέργεια.' : sprintf( 'Υπάρχουν %d αιτήματα επιστροφής που χρειάζονται ενέργεια.', $n );
+        return '<div class="notice notice-warning"><p>↩️ ' . esc_html( $text ) . ' <a href="' . esc_url( self::page_url() ) . '">' . esc_html( 'Δείτε τα αιτήματα' ) . '</a></p></div>';
+    }
+
+    public function pending_notice() {
+        $screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
+        echo $this->pending_notice_html( $screen ? $screen->id : '' ); // phpcs:ignore WordPress.Security.EscapeOutput -- escaped στο pending_notice_html
+    }
+
+    /** Προσθέτει τη στήλη «Επιστροφή» μετά την κατάσταση της παραγγελίας. */
+    public function add_order_column( $columns ) {
+        $out = array();
+        foreach ( (array) $columns as $key => $label ) {
+            $out[ $key ] = $label;
+            if ( 'order_status' === $key ) {
+                $out['cc_return'] = 'Επιστροφή';
+            }
+        }
+        if ( ! isset( $out['cc_return'] ) ) {
+            $out['cc_return'] = 'Επιστροφή';
+        }
+        return $out;
+    }
+
+    /** Η κατάσταση του πιο πρόσφατου αιτήματος της παραγγελίας (+N αν υπάρχουν περισσότερα), '' αν κανένα. */
+    public function order_column_html( $order_id ) {
+        $rows = CC_Returns_Repo::for_order( (int) $order_id );
+        if ( ! $rows ) {
+            return '';
+        }
+        $label = CC_Returns_Service::status_label( $rows[0]['status'] );
+        $more  = count( $rows ) > 1 ? ' (+' . ( count( $rows ) - 1 ) . ')' : '';
+        return '<span class="cc-return-col">↩️ ' . esc_html( $label . $more ) . '</span>';
+    }
+
+    public function render_order_column_hpos( $column, $order ) {
+        if ( 'cc_return' === $column && $order instanceof WC_Order ) {
+            echo $this->order_column_html( $order->get_id() ); // phpcs:ignore WordPress.Security.EscapeOutput
+        }
+    }
+
+    public function render_order_column_legacy( $column, $post_id ) {
+        if ( 'cc_return' === $column ) {
+            echo $this->order_column_html( (int) $post_id ); // phpcs:ignore WordPress.Security.EscapeOutput
+        }
     }
 
     public function add_submenu() {

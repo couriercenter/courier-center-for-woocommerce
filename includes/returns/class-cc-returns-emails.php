@@ -1,6 +1,6 @@
 <?php
 /**
- * Επιστροφές: καταχώρηση των 3 emails πελάτη στο WooCommerce.
+ * Επιστροφές: καταχώρηση των 3 emails πελάτη και του email «Νέο αίτημα επιστροφής» προς το κατάστημα.
  *
  * - woocommerce_email_actions: οι actions της υπηρεσίας γίνονται "transactional" (δουλεύουν και με deferred emails).
  * - woocommerce_email_classes: προσθέτει τις 3 κλάσεις (τα αρχεία φορτώνονται εδώ, όταν το WC_Email υπάρχει ήδη).
@@ -17,6 +17,7 @@ class CC_Returns_Emails {
         'cc_return_request_received',
         'cc_return_shipment_created',
         'cc_return_rejected',
+        'cc_return_request_submitted',
     );
 
     public function __construct() {
@@ -34,10 +35,12 @@ class CC_Returns_Emails {
         require_once $dir . 'class-cc-email-return-received.php';
         require_once $dir . 'class-cc-email-return-created.php';
         require_once $dir . 'class-cc-email-return-rejected.php';
+        require_once $dir . 'class-cc-email-return-admin-new.php';
 
         $emails['CC_Email_Return_Received'] = new CC_Email_Return_Received();
         $emails['CC_Email_Return_Created']  = new CC_Email_Return_Created();
         $emails['CC_Email_Return_Rejected'] = new CC_Email_Return_Rejected();
+        $emails['CC_Email_Return_Admin_New'] = new CC_Email_Return_Admin_New();
         return $emails;
     }
 }

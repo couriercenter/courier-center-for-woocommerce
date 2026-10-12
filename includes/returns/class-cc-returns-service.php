@@ -266,6 +266,7 @@ class CC_Returns_Service {
 
         if ( CC_Returns_Settings::require_approval() ) {
             do_action( 'cc_return_request_received', $id );
+            do_action( 'cc_return_request_submitted', $id ); // email «Νέο αίτημα επιστροφής» στο κατάστημα
             return $id;
         }
 
@@ -278,6 +279,7 @@ class CC_Returns_Service {
         if ( ! $fresh || CC_Returns_Rules::ST_CREATED !== $fresh['status'] ) {
             do_action( 'cc_return_request_received', $id );
         }
+        do_action( 'cc_return_request_submitted', $id ); // email «Νέο αίτημα επιστροφής» στο κατάστημα
         return $id;
     }
 

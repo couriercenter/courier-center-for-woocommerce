@@ -152,7 +152,7 @@ class Courier_Center_WooCommerce {
     public function add_admin_menu() {
         add_menu_page(
             'Courier Center',
-            'Courier Center',
+            'Courier Center' . $this->returns_admin->badge_html(), // αιτήματα επιστροφής που περιμένουν ενέργεια
             'manage_woocommerce',
             'courier-center',
             array( $this->settings, 'render_page' ),
