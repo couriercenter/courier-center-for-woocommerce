@@ -22,6 +22,7 @@ class CC_Order_Meta_Box {
         add_action( 'wp_ajax_cc_void_shipment', array( $this, 'ajax_void_shipment' ) );
         add_action( 'wp_ajax_cc_update_status', array( $this, 'ajax_update_status' ) );
         add_action( 'wp_ajax_cc_remove_boxnow', array( $this, 'ajax_remove_boxnow' ) );
+        add_action( 'wp_ajax_cc_set_boxnow_locker', array( $this, 'ajax_set_boxnow_locker' ) );
 
         // PDF download handler
         add_action( 'admin_post_cc_download_voucher', array( $this, 'download_voucher_pdf' ) );
@@ -111,8 +112,15 @@ class CC_Order_Meta_Box {
                 var originalText = \$button.data('origText');
                 if ( ! originalText ) { originalText = \$button.text(); \$button.data('origText', originalText); }
 
-                \$button.prop('disabled', true).text('⏳ Δημιουργία...');
+                // BOX NOW «Επιλογή από χάρτη» (Mode B): στέλνεται το locker που διάλεξε ο merchant
+                var bnPick = \$form.find('[name=boxnow]').is(':checked') && \$form.find('[name=cc_bn_mode]:checked').val() === 'pick';
                 \$status.html('').removeClass('cc-error cc-success');
+                if ( bnPick && ! \$form.find('[name=locker_id]').val() ) {
+                    \$status.addClass('cc-error').html('❌ Επιλέξτε locker από τον χάρτη ή «Αυτόματη εύρεση».');
+                    return;
+                }
+
+                \$button.prop('disabled', true).text('⏳ Δημιουργία...');
 
                 \$.ajax({
                     url: ccOrderAjax.ajaxUrl,
@@ -123,6 +131,8 @@ class CC_Order_Meta_Box {
                         order_id: \$form.find('[name=order_id]').val(),
                         service_type: \$form.find('[name=service_type]').val(),
                         boxnow: \$form.find('[name=boxnow]').is(':checked') ? '1' : '0',
+                        locker_id: bnPick ? \$form.find('[name=locker_id]').val() : '',
+                        locker_name: bnPick ? \$form.find('[name=locker_name]').val() : '',
                         return_option: \$form.find('[name=return_option]:checked').val() || 'none',
                         parcel_count: \$('#cc-multi-parcel').is(':checked') ? parseInt(\$('#cc-parcel-count').val()) : 1,
                         pickup_point: \$form.find('[name=pickup_point]').val() || '',
@@ -273,6 +283,112 @@ class CC_Order_Meta_Box {
                 });
             });
 
+            // ── Χάρτης BOX NOW (ο πελάτης λέει στο τηλέφωνο ποιο locker θέλει) ──
+            // Ίδιο SDK με το checkout: φρέσκο #boxnowmap + ξαναφόρτωμα του script σε κάθε άνοιγμα.
+            var bnHandlers = null;
+            window._bn_map_widget_config = {
+                partnerId: ccOrderAjax.bnPartnerId,
+                parentElement: '#boxnowmap',
+                afterSelect: function(selected) {
+                    var h = bnHandlers;
+                    bnHandlers = null;
+                    \$('#cc-bn-admin-overlay').removeClass('cc-open');
+                    if (h) {
+                        // το SDK δίνει τη διεύθυνση HTML-encoded (π.χ. &amp;)
+                        h.select({ id: String(selected.boxnowLockerId || ''), name: \$('<textarea>').html(selected.boxnowLockerAddressLine1 || '').val() });
+                    }
+                }
+            };
+
+            function ccBnOpen(handlers) {
+                bnHandlers = handlers;
+                \$('#boxnowmap').replaceWith('<div id=\"boxnowmap\"></div>');
+                \$('script[src*=\"widget-cdn.boxnow.gr\"]').remove();
+                \$('#cc-bn-admin-overlay').addClass('cc-open');
+                var s = document.createElement('script');
+                s.src = 'https://widget-cdn.boxnow.gr/map-widget/client/v5.js';
+                s.onload = function() {
+                    var btn = document.querySelector('#cc-bn-admin-overlay .boxnow-map-widget-button');
+                    if (btn) { btn.click(); }
+                };
+                s.onerror = function() {
+                    ccBnClose();
+                    \$('#cc-ajax-status').removeClass('cc-success').addClass('cc-error').html('❌ Ο χάρτης BOX NOW δεν φόρτωσε. Δοκιμάστε ξανά.');
+                };
+                document.head.appendChild(s);
+            }
+
+            function ccBnClose() {
+                var h = bnHandlers;
+                bnHandlers = null;
+                \$('#cc-bn-admin-overlay').removeClass('cc-open');
+                if (h && h.cancel) { h.cancel(); }
+            }
+
+            \$(document).on('click', '#cc-bn-admin-close', function(e) { e.preventDefault(); ccBnClose(); });
+            \$(document).on('click', '#cc-bn-admin-overlay', function(e) { if (e.target === this) { ccBnClose(); } });
+
+            // Mode B: BOX NOW → «Αυτόματη εύρεση» ή «Επιλογή από χάρτη»
+            function ccBnPicked(locker) {
+                var \$form = \$('#cc-create-voucher-form');
+                \$form.find('[name=locker_id]').val(locker ? locker.id : '');
+                \$form.find('[name=locker_name]').val(locker ? locker.name : '');
+                \$('#cc-bn-picked-name').text(locker ? (locker.name || locker.id) : '');
+                \$('#cc-bn-picked').toggle(!! locker);
+            }
+
+            function ccBnPickFromMap() {
+                ccBnOpen({
+                    select: function(locker) { ccBnPicked(locker); },
+                    cancel: function() {
+                        if ( ! \$('#cc-create-voucher-form [name=locker_id]').val() ) {
+                            \$('#cc-create-voucher-form [name=cc_bn_mode][value=auto]').prop('checked', true);
+                        }
+                    }
+                });
+            }
+
+            \$(document).on('change', '#cc-create-voucher-form input[type=checkbox][name=boxnow]', function() {
+                \$('#cc-bn-mode-wrap').toggle(\$(this).is(':checked'));
+            });
+            \$(document).on('change', '#cc-create-voucher-form [name=cc_bn_mode]', function() {
+                if (\$(this).val() === 'pick') {
+                    if ( ! \$('#cc-create-voucher-form [name=locker_id]').val() ) { ccBnPickFromMap(); }
+                } else {
+                    ccBnPicked(null);
+                }
+            });
+            \$(document).on('click', '#cc-bn-change', function(e) { e.preventDefault(); ccBnPickFromMap(); });
+
+            // Mode A / AUTO: νέο locker → αποθήκευση στην παραγγελία
+            \$(document).on('click', '#cc-change-locker-btn', function(e) {
+                e.preventDefault();
+                var \$button = \$(this);
+                var \$status = \$('#cc-ajax-status');
+                ccBnOpen({ select: function(locker) {
+                    \$button.prop('disabled', true);
+                    \$status.html('').removeClass('cc-error cc-success');
+                    \$.post(ccOrderAjax.ajaxUrl, {
+                        action: 'cc_set_boxnow_locker',
+                        nonce: ccOrderAjax.nonce,
+                        order_id: \$button.data('order-id'),
+                        locker_id: locker.id,
+                        locker_name: locker.name
+                    }).done(function(response) {
+                        if (response.success) {
+                            \$status.addClass('cc-success').html('✅ ' + response.data.message);
+                            setTimeout(function() { location.reload(); }, 1000);
+                        } else {
+                            \$button.prop('disabled', false);
+                            \$status.addClass('cc-error').html('❌ ' + ((response.data && response.data.message) || 'Σφάλμα'));
+                        }
+                    }).fail(function(xhr, status, error) {
+                        \$button.prop('disabled', false);
+                        \$status.addClass('cc-error').html('❌ AJAX error: ' + error);
+                    });
+                } });
+            });
+
         });
         ";
 
@@ -281,6 +397,7 @@ class CC_Order_Meta_Box {
         wp_localize_script( 'cc-order-actions', 'ccOrderAjax', array(
             'ajaxUrl' => admin_url( 'admin-ajax.php' ),
             'nonce'   => wp_create_nonce( 'cc_create_voucher_nonce' ),
+            'bnPartnerId' => 10853,
         ) );
     }
 
@@ -498,12 +615,18 @@ class CC_Order_Meta_Box {
                      ═══════════════════════════════════════════════════════════ -->
 
                 <div style="background:#f0faf2; border:1px solid #7bc47f; border-radius:4px; padding:10px 12px; margin-bottom:12px;">
-                    <strong>📦 BOX NOW Locker (επιλεγμένο από πελάτη)</strong><br>
+                    <strong>📦 BOX NOW Locker (επιλεγμένο)</strong><br>
                     <span style="font-size:13px; color:#2c6e35; display:block; margin-top:4px;">
                         <?php echo esc_html( $boxnow_locker_name ?: $boxnow_locker_id ); ?>
                     </span>
                     <small style="color:#888;">ID: <?php echo esc_html( $boxnow_locker_id ); ?></small>
                 </div>
+
+                <button type="button" id="cc-change-locker-btn" class="button button-secondary"
+                        style="width:100%; margin-bottom:12px;"
+                        data-order-id="<?php echo esc_attr( $order->get_id() ); ?>">
+                    🗺️ Αλλαγή locker
+                </button>
 
                 <div id="cc-create-voucher-form">
                     <input type="hidden" name="order_id"     value="<?php echo esc_attr( $order->get_id() ); ?>">
@@ -537,6 +660,12 @@ class CC_Order_Meta_Box {
                         Ο πελάτης επέλεξε αυτόματη παράδοση στο κοντινότερο διαθέσιμο BOX NOW Locker.
                     </span>
                 </div>
+
+                <button type="button" id="cc-change-locker-btn" class="button button-secondary"
+                        style="width:100%; margin-bottom:12px;"
+                        data-order-id="<?php echo esc_attr( $order->get_id() ); ?>">
+                    🗺️ Επιλογή locker από χάρτη
+                </button>
 
                 <div id="cc-create-voucher-form">
                     <input type="hidden" name="order_id"      value="<?php echo esc_attr( $order->get_id() ); ?>">
@@ -628,8 +757,26 @@ class CC_Order_Meta_Box {
                         <input type="checkbox" name="boxnow" value="1">
                         <strong>📦 BOX NOW Locker</strong>
                         <br>
-                        <small style="color: #666;">Αυτόματη αναζήτηση σε ακτίνα 1.5km</small>
+                        <small style="color: #666;">Αυτόματη αναζήτηση ή επιλογή από χάρτη</small>
                     </label>
+
+                    <div id="cc-bn-mode-wrap" class="cc-return-options" style="display:none; margin-top:-6px;">
+                        <label class="cc-radio-label">
+                            <input type="radio" name="cc_bn_mode" value="auto" checked>
+                            <span><strong>Αυτόματη εύρεση</strong></span>
+                            <br><small>Κοντινότερο locker σε ακτίνα 1.5km</small>
+                        </label>
+                        <label class="cc-radio-label">
+                            <input type="radio" name="cc_bn_mode" value="pick">
+                            <span><strong>Επιλογή από χάρτη</strong></span>
+                        </label>
+                        <div id="cc-bn-picked" style="display:none; margin-top:6px; padding:8px 10px; background:#f0faf2; border:1px solid #7bc47f; border-radius:3px; font-size:12px;">
+                            📦 <span id="cc-bn-picked-name" style="color:#2c6e35;"></span>
+                            <a href="#" id="cc-bn-change" style="display:block; margin-top:4px;">Αλλαγή</a>
+                        </div>
+                        <input type="hidden" name="locker_id" value="">
+                        <input type="hidden" name="locker_name" value="">
+                    </div>
 
                     <?php $this->render_pickup_point_select( $order ); ?>
                     <button type="button" id="cc-create-voucher-btn" class="button button-primary" style="width: 100%; height: 36px;">
@@ -640,6 +787,8 @@ class CC_Order_Meta_Box {
                 <div id="cc-ajax-status"></div>
 
                 <?php endif; // Mode A / AUTO / Mode B ?>
+
+                <?php $this->render_boxnow_map_modal(); ?>
 
             <?php endif; // voucher exists or not ?>
         </div>
@@ -672,6 +821,57 @@ class CC_Order_Meta_Box {
             <?php endforeach; ?>
         </select>
         <?php
+    }
+
+    /**
+     * Modal με τον χάρτη BOX NOW (ίδιο SDK με το checkout) — ο merchant διαλέγει
+     * το locker που του είπε ο πελάτης στο τηλέφωνο.
+     */
+    public function render_boxnow_map_modal() {
+        ?>
+        <style>
+            #cc-bn-admin-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.55); z-index: 100000; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; }
+            #cc-bn-admin-overlay.cc-open { display: flex; }
+            #cc-bn-admin-modal { background: #fff; border-radius: 8px; width: 100%; max-width: 900px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 24px 64px rgba(0,0,0,0.22); }
+            #cc-bn-admin-header { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid #efefef; }
+            #cc-bn-admin-header img { height: 28px; width: auto; border-radius: 5px; }
+            #cc-bn-admin-header span { flex: 1; font-size: 14px; font-weight: 600; }
+            #cc-bn-admin-overlay #boxnowmap { width: 100%; min-height: 520px; flex: 1; overflow: hidden; }
+            #cc-bn-admin-overlay #boxnowmap iframe { width: 100%; height: 100%; min-height: 520px; border: none; display: block; }
+        </style>
+        <div id="cc-bn-admin-overlay">
+            <div id="cc-bn-admin-modal" role="dialog" aria-modal="true">
+                <div id="cc-bn-admin-header">
+                    <img src="<?php echo esc_url( CC_WC_PLUGIN_URL . 'assets/img/boxnow-logo.png' ); ?>" alt="BOX NOW">
+                    <span>Επιλογή Locker</span>
+                    <button type="button" id="cc-bn-admin-close" class="button">✕</button>
+                </div>
+                <a href="javascript:;" class="boxnow-map-widget-button" aria-hidden="true" tabindex="-1"></a>
+                <div id="boxnowmap"></div>
+            </div>
+        </div>
+        <?php
+    }
+
+    /** Το locker που έστειλε ο χάρτης του admin, ή null. */
+    private function posted_locker() {
+        $id = isset( $_POST['locker_id'] ) ? preg_replace( '/[^A-Za-z0-9_-]/', '', sanitize_text_field( wp_unslash( $_POST['locker_id'] ) ) ) : '';
+        if ( '' === $id ) {
+            return null;
+        }
+        // Το SDK του χάρτη δίνει τη διεύθυνση HTML-encoded (π.χ. «&amp;»)
+        $name = isset( $_POST['locker_name'] )
+            ? sanitize_text_field( html_entity_decode( wp_unslash( $_POST['locker_name'] ), ENT_QUOTES, 'UTF-8' ) )
+            : '';
+        return array( 'id' => substr( $id, 0, 64 ), 'name' => $name );
+    }
+
+    /** Γράφει το locker στην παραγγελία όπως το checkout (pick mode)· το save() το κάνει ο caller. */
+    private function apply_locker( $order, array $locker ) {
+        $order->update_meta_data( '_boxnow_delivery_mode', 'pick' );
+        $order->update_meta_data( '_boxnow_locker_id', $locker['id'] );
+        $order->update_meta_data( '_boxnow_locker_code', $locker['id'] );
+        $order->update_meta_data( '_boxnow_locker_name', $locker['name'] );
     }
 
     /**
@@ -748,6 +948,14 @@ class CC_Order_Meta_Box {
         }
 
         $service_type = isset( $_POST['service_type'] ) ? sanitize_text_field( $_POST['service_type'] ) : 'next_day';
+
+        // BOX NOW «Επιλογή από χάρτη» στη φόρμα: το locker μπαίνει στην παραγγελία πριν το payload
+        // (αποθηκεύεται μαζί με το voucher· σε σφάλμα δεν γράφεται τίποτα)
+        $picked_locker = ( isset( $_POST['boxnow'] ) && $_POST['boxnow'] === '1' ) ? $this->posted_locker() : null;
+        if ( $picked_locker ) {
+            $this->apply_locker( $order, $picked_locker );
+        }
+
         $boxnow       = ( isset( $_POST['boxnow'] ) && $_POST['boxnow'] === '1' )
                         || ! empty( $order->get_meta( '_boxnow_locker_id' ) )
                         || $order->get_meta( '_boxnow_delivery_mode' ) === 'auto';
@@ -1438,5 +1646,51 @@ class CC_Order_Meta_Box {
         $order->add_order_note( '↩️ Η επιλογή BOX NOW αφαιρέθηκε από τον merchant. Η παραγγελία θα αποσταλεί ως κανονική αποστολή.' );
 
         wp_send_json_success( array( 'message' => 'Η επιλογή BOX NOW αφαιρέθηκε.' ) );
+    }
+
+    /**
+     * AJAX: ο merchant άλλαξε (ή διάλεξε) BOX NOW locker από τον χάρτη — αποθήκευση στην παραγγελία.
+     * Με ενεργό voucher όχι: πρώτα ακύρωση της αποστολής.
+     */
+    public function ajax_set_boxnow_locker() {
+        if ( ! check_ajax_referer( 'cc_create_voucher_nonce', 'nonce', false ) ) {
+            wp_send_json_error( array( 'message' => 'Invalid nonce' ) );
+        }
+
+        if ( ! current_user_can( 'edit_shop_orders' ) ) {
+            wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+        }
+
+        $order_id = isset( $_POST['order_id'] ) ? intval( $_POST['order_id'] ) : 0;
+        $order    = $order_id ? wc_get_order( $order_id ) : false;
+        if ( ! $order ) {
+            wp_send_json_error( array( 'message' => 'Order not found' ) );
+        }
+
+        if ( $order->get_meta( '_cc_voucher_number' ) && $order->get_meta( '_cc_voided' ) !== '1' ) {
+            wp_send_json_error( array( 'message' => 'Υπάρχει ενεργό voucher. Ακυρώστε πρώτα την αποστολή και μετά αλλάξτε locker.' ) );
+        }
+
+        $locker = $this->posted_locker();
+        if ( ! $locker ) {
+            wp_send_json_error( array( 'message' => 'Δεν επιλέχθηκε locker.' ) );
+        }
+
+        $old = $order->get_meta( '_boxnow_locker_name' ) ?: $order->get_meta( '_boxnow_locker_id' );
+        if ( '' === (string) $old ) {
+            $old = $order->get_meta( '_boxnow_delivery_mode' ) === 'auto' ? 'Αυτόματη εύρεση' : '—';
+        }
+
+        $this->apply_locker( $order, $locker );
+        $order->save();
+
+        $order->add_order_note( sprintf(
+            '📦 Το BOX NOW locker άλλαξε από τον merchant: %s → %s (ID: %s)',
+            $old,
+            $locker['name'] ?: $locker['id'],
+            $locker['id']
+        ) );
+
+        wp_send_json_success( array( 'message' => 'Το locker άλλαξε: ' . ( $locker['name'] ?: $locker['id'] ) ) );
     }
 }
