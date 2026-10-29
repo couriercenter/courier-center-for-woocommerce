@@ -401,6 +401,42 @@ class CC_Settings {
             array( 'label_for' => 'cc_wc_auto_create_status' )
         );
 
+        // ── Παραλαβή από τον courier ──────────────────────────────────────────
+        add_settings_section(
+            'cc_wc_picked_up_section',
+            __( '🚚 Παραλαβή από τον courier', 'courier-center-woocommerce' ),
+            array( $this, 'picked_up_section_callback' ),
+            'courier-center'
+        );
+
+        register_setting( 'cc_wc_settings', 'cc_wc_pickup_status', array(
+            'type'              => 'string',
+            'sanitize_callback' => array( $this, 'sanitize_pickup_status' ),
+            'default'           => '',
+        ) );
+        add_settings_field(
+            'cc_wc_pickup_status',
+            __( 'Σε παραλαβή → κατάσταση', 'courier-center-woocommerce' ),
+            array( $this, 'pickup_status_field_callback' ),
+            'courier-center',
+            'cc_wc_picked_up_section',
+            array( 'label_for' => 'cc_wc_pickup_status' )
+        );
+
+        register_setting( 'cc_wc_settings', 'cc_wc_pickup_notify', array(
+            'type'              => 'string',
+            'sanitize_callback' => 'sanitize_text_field',
+            'default'           => '1',
+        ) );
+        add_settings_field(
+            'cc_wc_pickup_notify',
+            __( 'Email στον πελάτη', 'courier-center-woocommerce' ),
+            array( $this, 'pickup_notify_field_callback' ),
+            'courier-center',
+            'cc_wc_picked_up_section',
+            array( 'label_for' => 'cc_wc_pickup_notify' )
+        );
+
         // ── Διαχειρίσιμες μέθοδοι αποστολής ────────────────────────────────────
         add_settings_section(
             'cc_wc_handled_section',
@@ -1433,6 +1469,50 @@ class CC_Settings {
         echo '<p class="description">Μόλις μια παραγγελία περάσει σε αυτή την κατάσταση, θα δημιουργείται αυτόματα voucher (Επόμενη Μέρα, με αυτόματο εντοπισμό BOX NOW όπου χρειάζεται).</p>';
     }
 
+    public function picked_up_section_callback() {
+        echo '<p>Όταν ο courier παραλάβει το δέμα από το κατάστημα, η παραγγελία μπορεί να περάσει αυτόματα σε μια κατάσταση της επιλογής σας (π.χ. «Εστάλη») — μία φορά ανά αποστολή, μόνο από «Σε επεξεργασία», «Σε αναμονή» ή «Εκκρεμεί πληρωμή». Αν αλλάξετε μετά την κατάσταση με το χέρι, δεν αλλάζει ξανά. Η αυτόματη ολοκλήρωση στην παράδοση γίνεται κανονικά και από αυτή την κατάσταση.</p>';
+    }
+
+    /** Μόνο καταστάσεις «μετά την αποστολή»· οτιδήποτε άλλο σημαίνει ανενεργό. */
+    public function sanitize_pickup_status( $value ) {
+        $status = sanitize_key( preg_replace( '/^wc-/', '', (string) $value ) );
+        return in_array( $status, CC_Status_Tracker::PICKUP_STATUS_EXCLUDED, true ) ? '' : $status;
+    }
+
+    public function pickup_status_field_callback( $args ) {
+        $value    = CC_Status_Tracker::pickup_status();
+        $statuses = function_exists( 'wc_get_order_statuses' ) ? wc_get_order_statuses() : array();
+
+        printf( '<select id="%s" name="%s">', esc_attr( $args['label_for'] ), esc_attr( $args['label_for'] ) );
+        echo '<option value="">— Καμία αλλαγή —</option>';
+        foreach ( $statuses as $key => $label ) {
+            $slug = preg_replace( '/^wc-/', '', $key );
+            if ( in_array( $slug, CC_Status_Tracker::PICKUP_STATUS_EXCLUDED, true ) ) {
+                continue;
+            }
+            printf(
+                '<option value="%s" %s>%s</option>',
+                esc_attr( $slug ),
+                selected( $value, $slug, false ),
+                esc_html( $label )
+            );
+        }
+        echo '</select>';
+        echo '<p class="description">Η κατάσταση που παίρνει η παραγγελία μόλις ο courier παραλάβει το δέμα. Αν δεν έχετε κατάσταση «Εστάλη», μπορείτε να τη φτιάξετε με ένα plugin προσαρμοσμένων καταστάσεων παραγγελίας.</p>';
+    }
+
+    public function pickup_notify_field_callback( $args ) {
+        $value = get_option( $args['label_for'], '1' );
+        printf(
+            '<label><input type="checkbox" id="%s" name="%s" value="1" %s> %s</label>',
+            esc_attr( $args['label_for'] ),
+            esc_attr( $args['label_for'] ),
+            checked( $value, '1', false ),
+            esc_html__( 'Email «Η παραγγελία στάλθηκε» στον πελάτη, με τον αριθμό αποστολής και το link παρακολούθησης', 'courier-center-woocommerce' )
+        );
+        echo '<p class="description">Μόνο για vouchers των τελευταίων 7 ημερών. Αν διαλέξετε «Ολοκληρώθηκε», το email το στέλνει το ίδιο το WooCommerce.</p>';
+    }
+
     /**
      * Όλα τα options του plugin — όσα σβήνει η «Εκκαθάριση».
      *
@@ -1461,6 +1541,8 @@ class CC_Settings {
             'cc_wc_boxnow_default_selected',
             'cc_wc_auto_create_enabled',
             'cc_wc_auto_create_status',
+            'cc_wc_pickup_status',
+            'cc_wc_pickup_notify',
             'cc_wc_handled_shipping_methods',
         ), CC_Returns_Settings::option_names() );
     }

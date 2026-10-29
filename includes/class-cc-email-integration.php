@@ -13,9 +13,24 @@ class CC_Email_Integration {
     /**
      * Constructor
      */
-    public function __construct() {
+    public function __construct( $hook = true ) {
         // Hook στο WooCommerce email template - πάνω από τα order details
-        add_action( 'woocommerce_email_before_order_table', array( $this, 'add_tracking_info' ), 10, 4 );
+        if ( $hook ) {
+            add_action( 'woocommerce_email_before_order_table', array( $this, 'add_tracking_info' ), 10, 4 );
+        }
+    }
+
+    /**
+     * Το κουτί «Στοιχεία Αποστολής» ως HTML, για emails που φτιάχνει το ίδιο το plugin
+     * (π.χ. «Η παραγγελία στάλθηκε»). Κενό χωρίς ενεργό voucher ή με την ένδειξη κλειστή.
+     *
+     * @param WC_Order $order
+     * @return string
+     */
+    public static function tracking_block_html( $order ) {
+        ob_start();
+        ( new self( false ) )->add_tracking_info( $order, false, false, null );
+        return (string) ob_get_clean();
     }
 
     /**

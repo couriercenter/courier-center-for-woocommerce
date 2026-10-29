@@ -1044,6 +1044,7 @@ class CC_Order_Meta_Box {
         $order->update_meta_data( '_cc_boxnow', $boxnow ? '1' : '0' );
         $order->update_meta_data( '_cc_return_option', $return_option );
         $order->update_meta_data( '_cc_created_at', current_time( 'mysql' ) );
+        $order->delete_meta_data( '_cc_picked_up_at' ); // νέο voucher: η παραλαβή μετράει ξανά
 
         // BOX NOW Parcel ID — το API το επιστρέφει μόνο σε αποστολές BOX NOW,
         // οπότε η ύπαρξη της τιμής είναι από μόνη της η ένδειξη ότι υπάρχει δέμα BOX NOW.
@@ -1289,6 +1290,7 @@ class CC_Order_Meta_Box {
         $order->update_meta_data( '_cc_boxnow', $boxnow ? '1' : '0' );
         $order->update_meta_data( '_cc_return_option', $return_option );
         $order->update_meta_data( '_cc_created_at', current_time( 'mysql' ) );
+        $order->delete_meta_data( '_cc_picked_up_at' ); // νέο voucher: η παραλαβή μετράει ξανά
         $order->save();
 
         $status_label = function_exists( 'wc_get_order_status_name' )
@@ -1599,7 +1601,7 @@ class CC_Order_Meta_Box {
         }
 
         // Save status to order meta (+ σημείωση, τελικό status, ολοκλήρωση παραγγελίας)
-        CC_Status_Tracker::apply_status( $order, $status_code, $status_desc, $action_code, 'manual' );
+        CC_Status_Tracker::apply_status( $order, $status_code, $status_desc, $action_code, 'manual', (array) $info );
 
         $message = $status_desc ?: "Status: $status_code";
         if ( $action_code ) {

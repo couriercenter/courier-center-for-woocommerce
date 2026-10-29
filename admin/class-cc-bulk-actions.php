@@ -586,6 +586,7 @@ class CC_Bulk_Actions {
             $order->update_meta_data( '_cc_service_type', 'next_day' );
             $order->update_meta_data( '_cc_boxnow', $is_boxnow_order ? '1' : '0' );
             $order->update_meta_data( '_cc_created_at', current_time( 'mysql' ) );
+            $order->delete_meta_data( '_cc_picked_up_at' ); // νέο voucher: η παραλαβή μετράει ξανά
 
             // BOX NOW Parcel ID — επιστρέφεται μόνο σε αποστολές BOX NOW
             if ( ! empty( $result['OutboundShipmentNumber'] ) ) {
@@ -656,7 +657,7 @@ class CC_Bulk_Actions {
             }
             if ( empty( $status_code ) && empty( $status_desc ) ) { $failed++; $errors[] = "#$order_id ($awb): Δεν βρέθηκε status"; continue; }
 
-            CC_Status_Tracker::apply_status( $order, $status_code, $status_desc, $action_code, 'bulk' );
+            CC_Status_Tracker::apply_status( $order, $status_code, $status_desc, $action_code, 'bulk', (array) $info );
 
             CC_Status_Tracker::mark_check_now( $order );
 

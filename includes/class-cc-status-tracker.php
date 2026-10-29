@@ -20,6 +20,12 @@ class CC_Status_Tracker {
      */
     const STATUS_UPDATE_RATE_LIMIT = 3600;
 
+    /** Μόνο vouchers των τελευταίων 7 ημερών παίρνουν το email «στάλθηκε» (σε παλιά, το δέμα ίσως έφτασε προ πολλού). */
+    const PICKUP_NOTIFY_MAX_AGE = 604800;
+
+    /** Καταστάσεις που δεν μπορούν να είναι η «σε παραλαβή» (= ανενεργό). */
+    const PICKUP_STATUS_EXCLUDED = array( 'pending', 'processing', 'cancelled', 'refunded', 'failed', 'checkout-draft' );
+
     /**
      * Final statuses - stop polling when reached
      */
@@ -177,9 +183,14 @@ class CC_Status_Tracker {
      */
     private function get_active_shipment_orders() {
         // Use wc_get_orders for HPOS compatibility
+        $statuses = array( 'wc-processing', 'wc-on-hold', 'wc-pending', 'wc-completed' );
+        if ( '' !== self::pickup_status() ) {
+            // η «σε παραλαβή» (π.χ. «Εστάλη»): η παρακολούθηση συνεχίζει μέχρι την παράδοση
+            $statuses[] = 'wc-' . self::pickup_status();
+        }
         $args = array(
             'limit'      => 200,
-            'status'     => array( 'wc-processing', 'wc-on-hold', 'wc-pending', 'wc-completed' ),
+            'status'     => array_values( array_unique( $statuses ) ),
             'meta_query' => array(
                 'relation' => 'AND',
                 array(
@@ -236,7 +247,7 @@ class CC_Status_Tracker {
             return;
         }
 
-        self::apply_status( $order, $status_code, $status_desc, $action_code, 'auto' );
+        self::apply_status( $order, $status_code, $status_desc, $action_code, 'auto', (array) $info );
     }
 
     /**
@@ -252,8 +263,9 @@ class CC_Status_Tracker {
      * @param string   $status_desc
      * @param string   $action_code
      * @param string   $source      'auto' | 'bulk' | 'manual'
+     * @param array    $info        το ShipmentInfo της απάντησης (References για την «ΑΣΚΟΠΗ ΠΡΟΣΕΛΕΥΣΗ»)
      */
-    public static function apply_status( $order, $status_code, $status_desc, $action_code, $source ) {
+    public static function apply_status( $order, $status_code, $status_desc, $action_code, $source, $info = array() ) {
         $old_status = $order->get_meta( '_cc_shipment_status' );
         $changed    = ( $old_status !== $status_code );
 
@@ -282,10 +294,17 @@ class CC_Status_Tracker {
             $order->add_order_note( $note );
         }
 
+        self::maybe_mark_picked_up( $order, (string) $status_code, (string) $action_code, self::is_futile_visit( (array) $info ), $source );
+
         // Auto-complete order if delivered — μόνο από ενεργές καταστάσεις, ώστε να
-        // μην αναιρείται ακύρωση ή επιστροφή χρημάτων που έκανε ο έμπορος.
+        // μην αναιρείται ακύρωση ή επιστροφή χρημάτων που έκανε ο έμπορος. Η κατάσταση
+        // «σε παραλαβή» (π.χ. ένα «Εστάλη» άλλου plugin) μετράει κι αυτή ως ενεργή.
+        $active = array( 'processing', 'on-hold', 'pending' );
+        if ( ! in_array( self::pickup_status(), array( '', 'completed' ), true ) ) {
+            $active[] = self::pickup_status();
+        }
         if ( in_array( $status_code, array( '29', '87' ), true )
-             && in_array( $order->get_status(), array( 'processing', 'on-hold', 'pending' ), true ) ) {
+             && in_array( $order->get_status(), $active, true ) ) {
 
             if ( ! $changed ) {
                 // Η παράδοση είχε ήδη καταγραφεί (παραγγελία που είχε μείνει πίσω) —
@@ -298,6 +317,113 @@ class CC_Status_Tracker {
                 ? '🚚 Αυτόματη ολοκλήρωση - Παραδόθηκε.'
                 : '🚚 Αυτόματη ολοκλήρωση - Η αποστολή παραδόθηκε.';
             $order->update_status( 'completed', $completed_note );
+        }
+    }
+
+    /**
+     * Η κατάσταση της ρύθμισης «Σε παραλαβή → κατάσταση» ('' = ανενεργό). Οι καταστάσεις
+     * «πριν» από την αποστολή ή «χαμένες» δεν έχουν νόημα εδώ και θεωρούνται ανενεργό.
+     *
+     * @return string slug χωρίς το «wc-»
+     */
+    public static function pickup_status() {
+        $status = sanitize_key( preg_replace( '/^wc-/', '', (string) get_option( 'cc_wc_pickup_status', '' ) ) );
+        return in_array( $status, self::PICKUP_STATUS_EXCLUDED, true ) ? '' : $status;
+    }
+
+    /** Κάποιο Reference της αποστολής γράφει ΑΣΚΟΠΗ (άσκοπη προσέλευση), όπως το διαβάζουν οι επιστροφές. */
+    public static function is_futile_visit( array $info ) {
+        foreach ( array( 'Reference1', 'Reference2', 'Reference3', 'Reference4' ) as $key ) {
+            if ( CC_Returns_Rules::contains_askopi( $info[ $key ] ?? '' ) ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Ο courier έχει το δέμα: η παραλαβή έκλεισε (CollectionStatus 10) και όχι ως άσκοπη προσέλευση, ή το δέμα
+     * παραδόθηκε. Το ShipmentStatus μόνο του δεν αρκεί: κάθε voucher περνά από 0 «None» σε 15 «NewShipment» λίγα
+     * λεπτά μετά τη δημιουργία, είτε παραλήφθηκε είτε όχι (και το BOX NOW μένει στο 15 μέχρι την παράδοση).
+     */
+    public static function is_picked_up( $status_code, $collection = '', $futile = false ) {
+        $code = (string) $status_code;
+        if ( in_array( $code, array( '29', '87' ), true ) ) {
+            return true;
+        }
+        if ( '' === $code || '0' === $code || in_array( $code, self::FINAL_STATUSES, true ) ) {
+            return false;
+        }
+        return (string) CC_Returns_Rules::COLLECTION_COMPLETED === (string) $collection && ! $futile;
+    }
+
+    /**
+     * Μία φορά ανά αποστολή (meta _cc_picked_up_at): το πρώτο status που δείχνει ότι ο courier
+     * παρέλαβε το δέμα περνά μια ενεργή παραγγελία στην κατάσταση της ρύθμισης. Και χωρίς αλλαγή
+     * status, ώστε όσες είχαν ήδη παραληφθεί πριν ενεργοποιηθεί η ρύθμιση να ακολουθήσουν. Δέμα που
+     * παραδόθηκε το αφήνει στην αυτόματη ολοκλήρωση· μη ενεργή παραγγελία (ακυρωμένη, ολοκληρωμένη,
+     * αλλαγμένη με το χέρι) μόνο σημειώνεται, δεν αλλάζει.
+     *
+     * @param WC_Order $order
+     * @param string   $status_code
+     * @param string   $collection CollectionStatus
+     * @param bool     $futile     άσκοπη προσέλευση
+     * @param string   $source 'auto' | 'bulk' | 'manual'
+     * @return bool αν άλλαξε η κατάσταση της παραγγελίας
+     */
+    private static function maybe_mark_picked_up( $order, $status_code, $collection, $futile, $source ) {
+        $pickup = self::pickup_status();
+        if ( '' === $pickup || ! self::is_picked_up( $status_code, $collection, $futile ) || $order->get_meta( '_cc_picked_up_at' ) ) {
+            return false;
+        }
+        $order->update_meta_data( '_cc_picked_up_at', current_time( 'mysql' ) );
+        $order->save();
+        if ( in_array( $status_code, array( '29', '87' ), true )
+             || ! in_array( $order->get_status(), array( 'processing', 'on-hold', 'pending' ), true )
+             || $order->get_status() === $pickup ) {
+            return false;
+        }
+
+        $created = strtotime( (string) $order->get_meta( '_cc_created_at' ) );
+        $recent  = $created && ( current_time( 'timestamp' ) - $created ) <= self::PICKUP_NOTIFY_MAX_AGE;
+        // Το «Ολοκληρώθηκε» έχει δικό του email από το WooCommerce (με το κουτί αποστολής).
+        $notify  = $recent && '1' === get_option( 'cc_wc_pickup_notify', '1' ) && 'completed' !== $pickup;
+
+        $label = ( 'bulk' === $source ) ? '[Bulk] ' : ( ( 'manual' === $source ) ? '' : '[Auto] ' );
+        $order->update_status( $pickup, sprintf( '🚚 %sΟ courier παρέλαβε την αποστολή %s.%s',
+            $label, $order->get_meta( '_cc_voucher_number' ), $notify ? ' Ο πελάτης ενημερώθηκε με email.' : '' ) );
+        if ( $notify ) {
+            self::send_shipped_email( $order );
+        }
+        return true;
+    }
+
+    /**
+     * Email «Η παραγγελία στάλθηκε» στον πελάτη, με τη μορφή των emails του WooCommerce.
+     *
+     * @param WC_Order $order
+     */
+    private static function send_shipped_email( $order ) {
+        $to = $order->get_billing_email();
+        if ( ! $to || ! function_exists( 'WC' ) ) {
+            return;
+        }
+        $first = $order->get_billing_first_name();
+        $body  = '<p>' . esc_html( $first ? sprintf( 'Γεια σας %s,', $first ) : 'Γεια σας,' ) . '</p>'
+            . '<p>' . esc_html( sprintf( 'Η παραγγελία #%s στάλθηκε: ο courier της Courier Center παρέλαβε το δέμα σας.', $order->get_order_number() ) ) . '</p>';
+        if ( '1' === $order->get_meta( '_cc_boxnow' ) ) {
+            $body .= '<p>' . esc_html( 'Θα παραδοθεί σε BOX NOW locker· τον κωδικό για να ανοίξετε τη θυρίδα θα τον λάβετε στο κινητό σας.' ) . '</p>';
+        }
+        $tracking = CC_Email_Integration::tracking_block_html( $order );
+        // Με κλειστή την ένδειξη στα emails, ο πελάτης παίρνει τουλάχιστον τον αριθμό αποστολής.
+        $body .= '' !== trim( $tracking ) ? $tracking
+            : '<p>' . esc_html( sprintf( 'Αριθμός αποστολής: %s', $order->get_meta( '_cc_voucher_number' ) ) ) . '</p>';
+        try {
+            $mailer = WC()->mailer();
+            $mailer->send( $to, sprintf( 'Η παραγγελία #%s στάλθηκε', $order->get_order_number() ),
+                $mailer->wrap_message( 'Η παραγγελία σας στάλθηκε', $body ) );
+        } catch ( \Throwable $e ) {
+            // πρόβλημα στο email δεν σταματά ποτέ την ενημέρωση status
         }
     }
 
