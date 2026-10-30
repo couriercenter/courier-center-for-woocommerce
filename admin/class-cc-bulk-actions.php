@@ -101,7 +101,14 @@ class CC_Bulk_Actions {
             $is_boxnow = $order->get_meta( '_cc_boxnow' ) === '1';
 
             if ( empty( $voucher ) || $is_voided ) {
-                echo '<span style="color:#999;">—</span>';
+                // Χωρίς voucher: η επιλογή του πελάτη (BOX NOW ή πόρτα), μόνο για μεθόδους του plugin
+                if ( ! CC_Shipment_Builder::is_handled_order( $order ) ) {
+                    echo '<span style="color:#999;">—</span>';
+                } elseif ( ! empty( $order->get_meta( '_boxnow_locker_id' ) ) || $order->get_meta( '_boxnow_delivery_mode' ) === 'auto' ) {
+                    echo '<span class="cc-col-badge cc-col-pending" title="Χωρίς voucher ακόμα">📦 BOX NOW</span>';
+                } else {
+                    echo '<span class="cc-col-badge cc-col-pending" title="Χωρίς voucher ακόμα">🚚 Κανονική</span>';
+                }
             } elseif ( $is_boxnow ) {
                 echo '<span class="cc-col-badge cc-col-boxnow">📦 BOX NOW</span>';
             } else {
@@ -177,6 +184,7 @@ class CC_Bulk_Actions {
             .cc-col-cancelled { background: #fce8e6; color: #8b0000; }
             .cc-col-boxnow    { background: #fff3e0; color: #e65100; }
             .cc-col-normal    { background: #f1f1f1; color: #555; }
+            .cc-col-pending   { background: #fff; color: #555; border: 1px dashed #c3c4c7; }
         </style>';
     }
 
