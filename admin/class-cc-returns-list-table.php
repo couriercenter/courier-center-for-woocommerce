@@ -172,7 +172,8 @@ class CC_Returns_List_Table extends WP_List_Table {
     public function column_id( $item ) {
         $actions = array();
         foreach ( CC_Returns_Admin::actions_for( $item ) as $a ) {
-            $actions[ $a['do'] ] = CC_Returns_Admin::action_link( $item, $a, false );
+            // Το key γίνεται class του span· με πρόθεμα, γιατί το CSS του WordPress κρύβει το «.approve» (σχόλια).
+            $actions[ 'cc-' . $a['do'] ] = CC_Returns_Admin::action_link( $item, $a, false );
         }
         return '<strong>#' . (int) $item['id'] . '</strong>' . $this->row_actions( $actions );
     }
